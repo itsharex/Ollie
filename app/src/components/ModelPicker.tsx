@@ -5,6 +5,14 @@ import { useChatStore } from '../store/chatStore'
 import { useSettingsStore } from '../store/settingsStore'
 import ProgressBar from './ProgressBar'
 
+const RECOMMENDED_MODELS = [
+	{ name: 'llama3.2', description: 'Meta\'s latest lightweight model, great for speed.', size: '2.0 GB', tags: ['Fast', 'General'] },
+	{ name: 'deepseek-r1:1.5b', description: 'Excellent reasoning capabilities, distilled from R1.', size: '1.2 GB', tags: ['Reasoning', 'Smart'] },
+	{ name: 'mistral', description: 'Strong all-rounder with good reasoning.', size: '4.1 GB', tags: ['Balanced'] },
+	{ name: 'gemma2:2b', description: 'Google\'s open model with high performance.', size: '1.6 GB', tags: ['General'] },
+	{ name: 'qwen2.5-coder:1.5b', description: 'Specialized for code generation and analysis.', size: '1.0 GB', tags: ['Coding'] },
+]
+
 export default function ModelPicker() {
 	const { models, fetchModels, pullModel, deleteModel, showModel, pulls } = useModelsStore()
 	const { setCurrentModel, currentModel } = useChatStore()
@@ -34,20 +42,56 @@ export default function ModelPicker() {
 				</button>
 			</div>
 
+			{/* Recommended Models */}
+			<div className="space-y-3">
+				<h3 className="text-sm font-semibold text-gray-900">Recommended Models</h3>
+				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					{RECOMMENDED_MODELS.filter(rm => !models.some(m => m.name.startsWith(rm.name.split(':')[0]))).map((rm) => (
+						<div key={rm.name} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col">
+							<div className="flex justify-between items-start mb-2">
+								<div className="font-semibold text-gray-900">{rm.name}</div>
+								<div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">{rm.size}</div>
+							</div>
+							<p className="text-sm text-gray-600 mb-4 flex-1">{rm.description}</p>
+							<div className="flex items-center justify-between mt-auto">
+								<div className="flex gap-2">
+									{rm.tags.map(tag => (
+										<span key={tag} className="text-[10px] font-medium px-2 py-1 bg-gray-50 text-gray-600 rounded-md border border-gray-100">
+											{tag}
+										</span>
+									))}
+								</div>
+								<button
+									onClick={() => pullModel(rm.name)}
+									className="p-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
+									title={`Download ${rm.name}`}
+								>
+									<Download size={16} />
+								</button>
+							</div>
+						</div>
+					))}
+					{RECOMMENDED_MODELS.every(rm => models.some(m => m.name.startsWith(rm.name.split(':')[0]))) && (
+						<div className="col-span-full py-8 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+							All recommended models are installed! 🎉
+						</div>
+					)}
+				</div>
+			</div>
+
 			<div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
 				{models.map((m, index) => (
 					<div key={m.name} className={`p-4 flex items-center justify-between gap-4 group transition-all duration-200 hover:bg-gray-50 ${index !== models.length - 1 ? 'border-b border-gray-100' : ''}`}>
 						<div className="min-w-0 flex-1">
 							<div className="text-sm font-semibold text-gray-900 truncate mb-1">{m.name}</div>
-							<div className="text-xs text-gray-500 truncate">{(m.size / (1024*1024*1024)).toFixed(1)} GB</div>
+							<div className="text-xs text-gray-500 truncate">{(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB</div>
 						</div>
 						<div className="flex items-center gap-2 flex-shrink-0">
 							<button
-								className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 ${
-									currentModel === m.name 
-										? 'bg-gradient-to-br from-gray-900 to-gray-800 text-white border-gray-900 shadow-sm' 
+								className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 ${currentModel === m.name
+										? 'bg-gradient-to-br from-gray-900 to-gray-800 text-white border-gray-900 shadow-sm'
 										: 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200 hover:border-gray-300'
-								}`}
+									}`}
 								onClick={() => setCurrentModel(m.name)}
 							>
 								{currentModel === m.name ? 'In use' : 'Use'}
@@ -62,11 +106,10 @@ export default function ModelPicker() {
 								<Trash2 size={16} />
 							</button>
 							<button
-								className={`p-2.5 rounded-xl transition-all duration-200 ${
-									defaultModel === m.name 
-										? 'text-green-600 bg-green-50' 
+								className={`p-2.5 rounded-xl transition-all duration-200 ${defaultModel === m.name
+										? 'text-green-600 bg-green-50'
 										: 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
-								}`}
+									}`}
 								title={defaultModel === m.name ? 'Default model' : 'Set as default'}
 								onClick={async () => { setDefaultModel(m.name); await saveSettingsToBackend(); }}
 							>
@@ -89,35 +132,35 @@ export default function ModelPicker() {
 									{p.status}
 								</div>
 							</div>
-										{p.progress && (
-												<div className="space-y-2">
-													{(() => {
-														const prog = p.progress || {}
-														const completed = Number(prog.completed ?? prog.downloaded ?? 0)
-														const total = Number(prog.total ?? prog.size ?? 0)
-														const percent = total > 0 ? Math.floor((completed / total) * 100) : 0
-														return <ProgressBar value={percent} />
-													})()}
-													<div className="flex justify-between text-xs text-gray-500">
-														<span>
-															{(() => {
-																const prog = p.progress || {}
-																const completed = Number(prog.completed ?? prog.downloaded ?? 0)
-																const total = Number(prog.total ?? prog.size ?? 0)
-																return total > 0 ? `${(completed/1e6).toFixed(1)}MB / ${(total/1e6).toFixed(1)}MB` : p.status
-															})()}
-														</span>
-														<span>
-															{(() => {
-																const prog = p.progress || {}
-																const completed = Number(prog.completed ?? prog.downloaded ?? 0)
-																const total = Number(prog.total ?? prog.size ?? 0)
-																return total > 0 ? `${Math.floor((completed / total) * 100)}%` : ''
-															})()}
-														</span>
-													</div>
-												</div>
-										)}
+							{p.progress && (
+								<div className="space-y-2">
+									{(() => {
+										const prog = p.progress || {}
+										const completed = Number(prog.completed ?? prog.downloaded ?? 0)
+										const total = Number(prog.total ?? prog.size ?? 0)
+										const percent = total > 0 ? Math.floor((completed / total) * 100) : 0
+										return <ProgressBar value={percent} />
+									})()}
+									<div className="flex justify-between text-xs text-gray-500">
+										<span>
+											{(() => {
+												const prog = p.progress || {}
+												const completed = Number(prog.completed ?? prog.downloaded ?? 0)
+												const total = Number(prog.total ?? prog.size ?? 0)
+												return total > 0 ? `${(completed / 1e6).toFixed(1)}MB / ${(total / 1e6).toFixed(1)}MB` : p.status
+											})()}
+										</span>
+										<span>
+											{(() => {
+												const prog = p.progress || {}
+												const completed = Number(prog.completed ?? prog.downloaded ?? 0)
+												const total = Number(prog.total ?? prog.size ?? 0)
+												return total > 0 ? `${Math.floor((completed / total) * 100)}%` : ''
+											})()}
+										</span>
+									</div>
+								</div>
+							)}
 						</div>
 					))}
 				</div>
