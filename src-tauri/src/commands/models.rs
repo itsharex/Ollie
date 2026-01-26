@@ -125,12 +125,6 @@ pub async fn model_show(name: String, server_url: Option<String>) -> Result<Show
     resp.json::<ShowResponse>().await.map_err(|e| e.to_string())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PullStartPayload {
-    pub pull_id: String,
-    pub name: String,
-}
-
 #[tauri::command]
 pub async fn model_pull(app: tauri::AppHandle, name: String, server_url: Option<String>) -> Result<SimpleResponse, String> {
     let url = server_url.unwrap_or_else(|| "http://localhost:11434".to_string());
