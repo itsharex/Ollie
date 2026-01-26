@@ -23,10 +23,12 @@ Ollama’s official desktop app is available on Windows and macOS, while Linux u
 ## Screenshots
 
 ![Overview](docs/screenshots/overview.png)
-![Chat](docs/screenshots/chat.png)
 ![Models](docs/screenshots/models.png)
 ![Settings](docs/screenshots/settings.png)
 ![Monitoring](docs/screenshots/monitoring.png)
+![Vision Model](docs/screenshots/vision-model.png)
+![File Parse](docs/screenshots/file-parse.png)
+![Generation Parameter](docs/screenshots/generation-parameter.png)
 
 ## Features
 - Chat with local Ollama models
