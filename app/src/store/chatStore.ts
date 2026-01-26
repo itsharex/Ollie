@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { useSettingsStore } from './settingsStore'
 
 export interface ChatMessage {
   id: string
@@ -26,12 +27,13 @@ interface ChatState {
   currentStreamId: string | null  // Track current stream ID
   updateCounter: number  // Force re-render counter
   lastUpdate: number  // Timestamp for updates
-  
+  currentSystemPrompt: string | null
+
   // Actions
   setCurrentModel: (model: string) => void
   setCurrentChatId: (chatId: string | null) => void
   createNewChat: (opts?: { model?: string; systemPrompt?: string; paramsJson?: string }) => Promise<string | null>
-  loadChat: (chatId: string) => Promise<boolean>
+  loadChat: (chatId: string, systemPrompt?: string | null) => Promise<boolean>
   addMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => string
   updateMessage: (id: string, content: string) => void
   updateStreamingMessage: (id: string, content: string) => void
@@ -39,6 +41,7 @@ interface ChatState {
   sendMessage: (content: string, options?: ChatOptions) => Promise<void>
   stopStreaming: () => void
   clearMessages: () => void
+  generateAutoTitle: (chatId: string, userContent: string) => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -50,47 +53,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentStreamId: null,
   updateCounter: 0,
   lastUpdate: 0,
+  currentSystemPrompt: null,
 
   setCurrentModel: (model) => set({ currentModel: model }),
   setCurrentChatId: (chatId) => set({ currentChatId: chatId }),
-  
+
   createNewChat: async (opts) => {
     try {
       const res = await invoke<any>('db_create_chat', {
         model: (opts?.model ?? get().currentModel) || null,
-        systemPrompt: opts?.systemPrompt ?? null,
+        systemPrompt: opts?.systemPrompt ?? (useSettingsStore.getState().systemPrompt || null),
         paramsJson: opts?.paramsJson ?? null,
       })
       const chatId = res?.id as string
-      set({ currentChatId: chatId, messages: [] })
+      // Store the system prompt in state so we use it immediately
+      set({ currentChatId: chatId, messages: [], currentSystemPrompt: res?.system_prompt || null })
       return chatId
     } catch (e) {
       console.error('db_create_chat failed', e)
       return null
     }
   },
-  
-  loadChat: async (chatId: string) => {
+
+  loadChat: async (chatId: string, systemPrompt?: string | null) => {
     try {
       const state = get()
       if (state.isStreaming) {
         await state.stopStreaming()
       }
-  const rows = await invoke<any>('db_list_messages', { chatId, limit: 1000 })
+      set({ currentChatId: chatId, messages: [], currentSystemPrompt: systemPrompt || null })
+      const rows = await invoke<any>('db_list_messages', { chatId, limit: 1000 })
       const msgs: ChatMessage[] = (rows as any[]).map((r) => ({
         id: r.id,
         role: (r.role as 'user' | 'assistant' | 'system'),
         content: r.content,
         timestamp: Number(r.created_at) || Date.now(),
       }))
-      set({ currentChatId: chatId, messages: msgs })
+      set({ messages: msgs })
       return true
     } catch (e) {
       console.error('db_list_messages failed', e)
       return false
     }
   },
-  
+
   addMessage: (message) => {
     const id = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     const newMessage: ChatMessage = {
@@ -101,7 +107,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({ messages: [...state.messages, newMessage] }))
     return id
   },
-  
+
   updateMessage: (id, content) => {
     set((state) => {
       const messageIndex = state.messages.findIndex(msg => msg.id === id)
@@ -109,7 +115,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         console.warn(`Message with id ${id} not found`)
         return state
       }
-      
+
       // Create completely new array and objects to force React re-render
       const newMessages = state.messages.map((msg, index) => {
         if (index === messageIndex) {
@@ -123,17 +129,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { ...msg } // Also clone other messages to be safe
       })
-      
+
       console.log('🔄 Force updating final message:', id, 'content length:', content.length)
-      
-      return { 
+
+      return {
         messages: newMessages,
         updateCounter: state.updateCounter + 1,
         lastUpdate: Date.now()
       }
     })
   },
-  
+
   updateStreamingMessage: (id, content) => {
     set((state) => {
       const messageIndex = state.messages.findIndex(msg => msg.id === id)
@@ -141,7 +147,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         console.warn(`Streaming message with id ${id} not found`)
         return state
       }
-      
+
       // Create completely new array and objects to force React re-render
       const newMessages = state.messages.map((msg, index) => {
         if (index === messageIndex) {
@@ -155,40 +161,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         return { ...msg } // Also clone other messages to be safe
       })
-      
+
       console.log('🔄 Force updating streaming message:', id, 'content length:', content.length)
-      
-      return { 
+
+      return {
         messages: newMessages,
         updateCounter: state.updateCounter + 1,
         lastUpdate: Date.now()
       }
     })
   },
-  
+
   setStreaming: (isStreaming, messageId, streamId) => {
-    set({ 
-      isStreaming, 
+    set({
+      isStreaming,
       streamingMessageId: messageId || null,
       currentStreamId: streamId || null
     })
   },
-  
+
   sendMessage: async (content, options) => {
     const state = get()
-    
+
     if (state.isStreaming) {
       console.warn('Already streaming, stopping current stream first')
       await state.stopStreaming()
       // Wait a bit for cleanup
       await new Promise(resolve => setTimeout(resolve, 100))
     }
-    
+
     if (!state.currentModel) {
       console.error('No model selected')
       return
     }
-    
+
     // Ensure we have a chat in DB
     if (!state.currentChatId) {
       await get().createNewChat({ model: state.currentModel })
@@ -201,36 +207,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
     // Persist user message
     const chatId = get().currentChatId
-  if (chatId) {
+    if (chatId) {
       try {
         // Ensure chat has model set in DB
         if (state.currentModel) {
-          invoke('db_set_chat_model', { chatId, model: state.currentModel }).catch(() => {})
+          invoke('db_set_chat_model', { chatId, model: state.currentModel }).catch(() => { })
         }
         await invoke('db_append_message', { chatId, role: 'user', content: content.trim(), metaJson: null })
-  // Inform listeners (Sidebar) to refresh chats ordering
-  window.dispatchEvent(new CustomEvent('chats-refresh'))
+        // Inform listeners (Sidebar) to refresh chats ordering
+        window.dispatchEvent(new CustomEvent('chats-refresh'))
       } catch (e) {
         console.warn('db_append_message (user) failed', e)
       }
     }
-    
+
     // Add assistant message placeholder
     const assistantMessageId = state.addMessage({
       role: 'assistant',
       content: '',
       isStreaming: true,
     })
-    
+
     let currentStreamId: string | null = null
     // Don't set streaming yet - wait for event listeners
-    
+
     let unlistenChunk: (() => void) | null = null
     let unlistenError: (() => void) | null = null
     let unlistenComplete: (() => void) | null = null
     let unlistenStreamStart: (() => void) | null = null
     let unlistenCancelled: (() => void) | null = null
-    
+
     const cleanup = () => {
       console.log('Cleaning up event listeners for message:', assistantMessageId)
       if (unlistenChunk) unlistenChunk()
@@ -239,7 +245,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (unlistenStreamStart) unlistenStreamStart()
       if (unlistenCancelled) unlistenCancelled()
     }
-    
+
     try {
       let persisted = false
       console.log('Setting up event listeners for message:', assistantMessageId)
@@ -251,7 +257,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const currentState = get()
         currentState.setStreaming(true, assistantMessageId, stream_id)
       })
-      
+
       // Listen for cancellation
       unlistenCancelled = await listen('chat:cancelled', (event: any) => {
         const { stream_id } = event.payload as { stream_id: string }
@@ -266,14 +272,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       unlistenChunk = await listen('chat:chunk', (event: any) => {
         const chunk = event.payload as { message?: { role?: string; content?: string }; done?: boolean }
         console.log('🟢 CHUNK RECEIVED for message:', assistantMessageId, 'chunk:', chunk)
-        
+
         // Only process chunks for the currently streaming assistant message
         const currentState = get()
         if (currentState.streamingMessageId !== assistantMessageId) {
           console.warn('⚠️ Ignoring chunk from different message stream')
           return
         }
-        
+
         const part = chunk?.message?.content ?? ''
         if (part.length > 0) {
           const currentMessage = currentState.messages.find(m => m.id === assistantMessageId)
@@ -285,7 +291,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             console.error('❌ Could not find message with ID:', assistantMessageId)
           }
         }
-        
+
         // If the provider sends a done=true with no content, we must still finalize
         if (chunk?.done) {
           console.log('✅ Chunk marked as done, stopping stream (finalize message)')
@@ -302,10 +308,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
               persisted = true
             }
           }
+
+          // Check triggers (in case complete event is skipped/too late)
+          const stateAfter = get()
+          if (stateAfter.messages.length <= 5 && chatId) {
+            const userMsg = stateAfter.messages.find(m => m.role === 'user')
+            if (userMsg && !stateAfter.currentSystemPrompt?.includes('Generate a short')) {
+              stateAfter.generateAutoTitle(chatId, userMsg.content).catch(console.error)
+            }
+          }
+
           cleanup()
         }
       })
-      
+
       unlistenError = await listen('chat:error', (event: any) => {
         console.error('Chat error:', event.payload)
         const payload = event.payload as { stream_id?: string; error?: string }
@@ -314,7 +330,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return
         }
         state.setStreaming(false)
-        
+
         // Don't replace content if we already have some response
         const currentMessage = get().messages.find(m => m.id === assistantMessageId)
         if (currentMessage && currentMessage.content.trim()) {
@@ -326,27 +342,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         cleanup()
       })
-      
+
       unlistenComplete = await listen('chat:complete', (event: any) => {
         const payload = event.payload as { completed: boolean; stream_id?: string }
         console.log('Stream completion event:', payload)
-        
+
         // Only process completion for the current stream
         if (payload.stream_id && payload.stream_id !== currentStreamId) {
           console.warn('Ignoring completion from different stream:', payload.stream_id)
           return
         }
-        
+
         if (!payload.completed) {
           console.warn('Stream completed but not successfully')
         }
-        
+
         // Always stop streaming when we get completion signal for our stream
         const currentState = get()
         if (currentState.isStreaming && currentState.streamingMessageId === assistantMessageId) {
           console.log('Stopping stream due to completion event')
           currentState.setStreaming(false)
-          
+
           // Remove isStreaming flag from the message using updateMessage
           const currentMessage = currentState.messages.find(m => m.id === assistantMessageId)
           if (currentMessage) {
@@ -361,23 +377,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
         cleanup()
+
+        // Check triggers
+        const finalState = get()
+        if (finalState.messages.length <= 5 && chatId) {
+          const userMsg = finalState.messages.find(m => m.role === 'user')
+          if (userMsg && !finalState.currentSystemPrompt?.includes('Generate a short')) {
+            // Avoid recursion
+            finalState.generateAutoTitle(chatId, userMsg.content).catch(console.error)
+          }
+        }
       })
-      
-  // NOW set streaming state after all listeners are ready (before invoke)
-  console.log('🚀 Starting streaming with all listeners ready')
-  state.setStreaming(true, assistantMessageId)
-      
-  // Prepare messages for API from a fresh snapshot to avoid stale state
-  const latest = get()
-  const apiMessages = latest.messages
+
+      // NOW set streaming state after all listeners are ready (before invoke)
+      state.setStreaming(true, assistantMessageId)
+
+      // Prepare messages for API from a fresh snapshot to avoid stale state
+      const latest = get()
+      const apiMessages = latest.messages
         .filter(msg => msg.role !== 'assistant' || msg.content.trim() !== '')
         .map(msg => ({
           role: msg.role,
           content: msg.content,
         }))
-      
+
+      // Inject system prompt if it exists
+      const freshState = get()
+      if (freshState.currentSystemPrompt) {
+        apiMessages.unshift({ role: 'system', content: freshState.currentSystemPrompt })
+      }
+
       // Send the chat request
-      const result = await invoke('chat_stream', {
+      await invoke('chat_stream', {
         request: {
           model: state.currentModel,
           messages: apiMessages,
@@ -390,19 +421,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
           } : undefined,
         },
       })
-      
-  console.log('Chat stream result:', result)
-      
+
       // Add a timeout safety net
       setTimeout(() => {
         const currentState = get()
         if (currentState.isStreaming && currentState.streamingMessageId === assistantMessageId) {
-          console.warn('Stream timeout, stopping...')
           currentState.setStreaming(false)
           cleanup()
         }
       }, 60000) // 60 second timeout
-      
+
     } catch (error) {
       console.error('Failed to send message:', error)
       state.setStreaming(false)
@@ -410,13 +438,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       cleanup()
     }
   },
-  
+
   stopStreaming: async () => {
     const state = get()
     if (state.isStreaming) {
       try {
         await invoke('abort_chat')
-        console.log('Chat streaming stopped')
         state.setStreaming(false)
       } catch (error) {
         console.error('Failed to stop streaming:', error)
@@ -425,8 +452,95 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
   },
-  
+
   clearMessages: () => {
-  set({ messages: [], isStreaming: false, streamingMessageId: null })
+    set({ messages: [], isStreaming: false, streamingMessageId: null })
   },
+
+  generateAutoTitle: async (chatId, userContent) => {
+    const state = get()
+    if (!state.currentModel) return
+
+    // Check if title already exists to avoid double generation
+    // We can't easily check DB here without query, but we can rely on frontend state not having title?
+    // Actually, let's just proceed. The last write wins.
+
+    const context = userContent.slice(0, 500)
+
+    let titleAccumulator = ''
+    let titleStreamId: string | null = null
+    let isDone = false
+
+    // Create a promise that resolves when generation is done
+    await new Promise<void>(async (resolvePromise) => {
+      let unlistenChunk: (() => void) | null = null
+      let unlistenStart: (() => void) | null = null
+      let timeout: any = null
+
+      const cleanup = () => {
+        if (timeout) clearTimeout(timeout)
+        if (unlistenChunk) unlistenChunk()
+        if (unlistenStart) unlistenStart()
+      }
+
+      // Wrap resolve to cleanup
+      const resolve = () => {
+        cleanup()
+        resolvePromise()
+      }
+
+      unlistenChunk = await listen('chat:chunk', (event: any) => {
+        const chunk = event.payload as { stream_id?: string; message?: { content?: string }; done?: boolean }
+        if (chunk.stream_id && chunk.stream_id === titleStreamId) {
+          if (chunk.message?.content) {
+            titleAccumulator += chunk.message.content
+          }
+          if (chunk.done) {
+            isDone = true
+            resolve()
+          }
+        }
+      })
+
+      unlistenStart = await listen('chat:stream-start', (event: any) => {
+        const payload = event.payload as { stream_id: string }
+        if (!titleStreamId) {
+          titleStreamId = payload.stream_id
+        }
+      })
+
+      // Timeout safety (60s)
+      timeout = setTimeout(() => {
+        if (!isDone) {
+          console.warn('⚠️ Auto-Title: Timed out')
+          resolve()
+        }
+      }, 60000)
+
+      try {
+        await invoke('chat_stream', {
+          request: {
+            model: state.currentModel,
+            messages: [
+              { role: 'system', content: 'Generate a very short title (3-5 words) for the user message. Output ONLY the title text. Do not use quotes.' },
+              { role: 'user', content: `Message: "${context}"` }
+            ],
+            stream: true,
+            options: { temperature: 0.7, max_tokens: 50 }
+          }
+        })
+      } catch (e) {
+        console.error('Auto-title invoke failed', e)
+        resolve()
+      }
+    })
+
+    // Process result
+    const cleanTitle = titleAccumulator.replace(/["']/g, '').trim()
+
+    if (cleanTitle) {
+      await invoke('db_set_chat_title', { chatId, title: cleanTitle })
+      window.dispatchEvent(new CustomEvent('chats-refresh'))
+    }
+  }
 }))

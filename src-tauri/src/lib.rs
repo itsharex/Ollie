@@ -24,6 +24,7 @@ pub fn run() {
       commands::db::db_list_messages,
       commands::db::db_delete_chat,
       commands::db::db_set_chat_model,
+      commands::db::db_set_chat_title,
       commands::db::db_list_chats_with_flags,
       commands::monitoring::start_system_monitoring,
       commands::monitoring::stop_system_monitoring,

@@ -10,6 +10,7 @@ type ChatMeta = {
   updated_at: number
   model?: string | null
   system_prompt?: string | null
+  title?: string | null
   has_messages?: boolean
 }
 
@@ -22,7 +23,7 @@ export default function Sidebar() {
 
   const refreshChats = async () => {
     try {
-  const rows = await invoke<any>('db_list_chats_with_flags', { limit: 200 })
+      const rows = await invoke<any>('db_list_chats_with_flags', { limit: 200 })
       setChats(rows as ChatMeta[])
       // Load a short preview for each chat (best-effort)
       const list = rows as ChatMeta[]
@@ -38,7 +39,7 @@ export default function Sidebar() {
             const trimmed = oneLine.length > 80 ? oneLine.slice(0, 80) + '…' : oneLine
             entries[c.id] = trimmed
           }
-        } catch {}
+        } catch { }
       }
       setPreviews(entries)
     } catch (e) {
@@ -60,7 +61,7 @@ export default function Sidebar() {
     if (!q) return chats
     return chats.filter(c => (c.model || '').toLowerCase().includes(q) || c.id.toLowerCase().includes(q))
   }, [searchQuery, chats])
-  
+
   return (
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col overflow-hidden shadow-sm">
       {/* Header with Ollama Logo */}
@@ -74,7 +75,7 @@ export default function Sidebar() {
             <p className="text-xs text-gray-500">AI Chat Interface</p>
           </div>
         </div>
-        
+
         {/* New Chat Button */}
         <button
           onClick={async () => {
@@ -93,7 +94,7 @@ export default function Sidebar() {
                   alert('Your most recent chat is empty. Send a message first before creating a new chat.')
                   return
                 }
-              } catch {}
+              } catch { }
             }
             const id = await createNewChat()
             if (id) {
@@ -107,7 +108,7 @@ export default function Sidebar() {
           <span>New chat</span>
         </button>
       </div>
-      
+
       {/* Search */}
       <div className="px-6 py-4 border-b border-gray-100">
         <div className="relative">
@@ -121,7 +122,7 @@ export default function Sidebar() {
           />
         </div>
       </div>
-      
+
       {/* Chat List */}
       <div className="flex-1 overflow-y-auto px-6 py-2">
         <div className="space-y-2">
@@ -143,37 +144,42 @@ export default function Sidebar() {
                       if (c.model) {
                         useChatStore.getState().setCurrentModel(c.model)
                       }
-                      await loadChat(c.id)
+                      await loadChat(c.id, c.system_prompt)
                       setView('chat')
                     }}
-                    className={`flex-1 min-w-0 text-left px-4 py-3 rounded-xl border transition-all duration-200 ${
-                      currentChatId === c.id 
-                        ? 'bg-gray-50 border-gray-200 shadow-sm' 
-                        : 'bg-white hover:bg-gray-50 border-transparent hover:border-gray-100 hover:shadow-sm'
-                    }`}
+                    className={`flex-1 min-w-0 text-left px-4 py-3 rounded-xl border transition-all duration-200 ${currentChatId === c.id
+                      ? 'bg-gray-50 border-gray-200 shadow-sm'
+                      : 'bg-white hover:bg-gray-50 border-transparent hover:border-gray-100 hover:shadow-sm'
+                      }`}
                   >
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-3 mb-1">
                       <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
                       <div className="text-sm font-semibold text-gray-900 truncate">
-                        {c.model || 'Untitled chat'}
+                        {c.title || 'Untitled chat'}
                       </div>
                     </div>
+
+                    <div className="flex items-center gap-2 ml-5 mb-1.5">
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                        {c.model || 'Unknown model'}
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        {new Date(c.updated_at).toLocaleDateString()}
+                      </span>
+                    </div>
+
                     {previews[c.id] && (
-                      <div className="text-xs text-gray-600 truncate ml-5 mb-1">
+                      <div className="text-xs text-gray-500 truncate ml-5">
                         {previews[c.id]}
                       </div>
                     )}
-                    <div className="text-[10px] text-gray-400 truncate ml-5">
-                      {new Date(c.updated_at).toLocaleString()}
-                    </div>
                   </button>
                   <button
                     title={c.has_messages ? 'Delete chat' : 'Cannot delete an empty chat'}
-                    className={`p-2 rounded-lg transition-colors ${
-                      c.has_messages 
-                        ? 'text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100' 
-                        : 'text-gray-200 cursor-not-allowed'
-                    }`}
+                    className={`p-2 rounded-lg transition-colors ${c.has_messages
+                      ? 'text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100'
+                      : 'text-gray-200 cursor-not-allowed'
+                      }`}
                     onClick={async (e) => {
                       e.stopPropagation()
                       if (!c.has_messages) {
@@ -204,26 +210,26 @@ export default function Sidebar() {
           )}
         </div>
       </div>
-      
+
       {/* Bottom Navigation */}
       <div className="p-6 border-t border-gray-100">
         <div className="space-y-2">
-          <button 
-            onClick={() => setView('monitoring')} 
+          <button
+            onClick={() => setView('monitoring')}
             className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-all duration-200 text-sm font-medium"
           >
             <Activity size={20} />
             <span>Monitoring</span>
           </button>
-          <button 
-            onClick={() => setView('models')} 
+          <button
+            onClick={() => setView('models')}
             className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-all duration-200 text-sm font-medium"
           >
             <Database size={20} />
             <span>Manage models</span>
           </button>
-          <button 
-            onClick={() => setView('settings')} 
+          <button
+            onClick={() => setView('settings')}
             className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-all duration-200 text-sm font-medium"
           >
             <Settings size={20} />

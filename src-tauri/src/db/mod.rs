@@ -54,9 +54,13 @@ pub async fn get_pool() -> Result<SqlitePool, String> {
 			updated_at INTEGER NOT NULL,
 			model TEXT,
 			system_prompt TEXT,
-			params_json TEXT
+			params_json TEXT,
+			title TEXT
 		)"#
 	).execute(&pool).await.map_err(|e| format!("DB migrate chats failed: {}", e))?;
+	
+	// Migration: Attempt to add title column for existing databases (silently fail if exists)
+	let _ = sqlx::query("ALTER TABLE chats ADD COLUMN title TEXT").execute(&pool).await;
 	sqlx::query(
 		r#"CREATE TABLE IF NOT EXISTS messages (
 			id TEXT PRIMARY KEY,

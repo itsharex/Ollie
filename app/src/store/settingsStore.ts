@@ -6,6 +6,7 @@ interface SettingsState {
   serverUrl: string
   serverPort: number
   defaultModel: string
+  systemPrompt: string
   defaultParams: {
     temperature: number
     topK: number
@@ -16,6 +17,7 @@ interface SettingsState {
   setServerUrl: (url: string) => void
   setServerPort: (port: number) => void
   setDefaultModel: (model: string) => void
+  setSystemPrompt: (prompt: string) => void
   setDefaultParams: (params: Partial<SettingsState['defaultParams']>) => void
   setTheme: (theme: SettingsState['theme']) => void
   loadSettingsFromBackend: () => Promise<void>
@@ -28,6 +30,7 @@ export const useSettingsStore = create<SettingsState>()(
       serverUrl: 'http://localhost',
       serverPort: 11434,
       defaultModel: '',
+      systemPrompt: '',
       defaultParams: {
         temperature: 0.8,
         topK: 40,
@@ -38,9 +41,10 @@ export const useSettingsStore = create<SettingsState>()(
       setServerUrl: (serverUrl) => set({ serverUrl }),
       setServerPort: (serverPort) => set({ serverPort }),
       setDefaultModel: (defaultModel) => set({ defaultModel }),
-      setDefaultParams: (params) => 
-        set((state) => ({ 
-          defaultParams: { ...state.defaultParams, ...params } 
+      setSystemPrompt: (systemPrompt) => set({ systemPrompt }),
+      setDefaultParams: (params) =>
+        set((state) => ({
+          defaultParams: { ...state.defaultParams, ...params }
         })),
       setTheme: (theme) => set({ theme }),
       loadSettingsFromBackend: async () => {
@@ -49,6 +53,7 @@ export const useSettingsStore = create<SettingsState>()(
           // Map backend shape to store
           const url: string = s.server_url || 'http://localhost:11434'
           const defaultModel: string = s.default_model || ''
+          const systemPrompt: string = s.system_prompt || ''
           const params = s.default_params || {}
           const theme: 'light' | 'dark' | 'system' = s.theme || 'light'
           // Split url and port if possible
@@ -65,6 +70,7 @@ export const useSettingsStore = create<SettingsState>()(
             serverUrl,
             serverPort,
             defaultModel,
+            systemPrompt,
             defaultParams: {
               temperature: params.temperature ?? 0.8,
               topK: params.top_k ?? 40,
@@ -83,6 +89,7 @@ export const useSettingsStore = create<SettingsState>()(
         const payload = {
           server_url,
           default_model: s.defaultModel || undefined,
+          system_prompt: s.systemPrompt || undefined,
           default_params: {
             temperature: s.defaultParams.temperature,
             top_k: s.defaultParams.topK,

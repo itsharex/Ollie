@@ -11,10 +11,13 @@ export default function ParametersPanel({ isOpen, onClose }: ParametersPanelProp
   const {
     defaultParams,
     setDefaultParams,
+    systemPrompt,
+    setSystemPrompt,
     saveSettingsToBackend
   } = useSettingsStore()
 
   const [localParams, setLocalParams] = useState(defaultParams)
+  const [localSystemPrompt, setLocalSystemPrompt] = useState(systemPrompt)
   const [hasChanges, setHasChanges] = useState(false)
 
   const handleParamChange = (param: string, value: number) => {
@@ -23,14 +26,21 @@ export default function ParametersPanel({ isOpen, onClose }: ParametersPanelProp
     setHasChanges(true)
   }
 
+  const handleSystemPromptChange = (value: string) => {
+    setLocalSystemPrompt(value)
+    setHasChanges(true)
+  }
+
   const handleSave = async () => {
     setDefaultParams(localParams)
+    setSystemPrompt(localSystemPrompt)
     await saveSettingsToBackend()
     setHasChanges(false)
   }
 
   const handleReset = () => {
     setLocalParams(defaultParams)
+    setLocalSystemPrompt(systemPrompt)
     setHasChanges(false)
   }
 
@@ -47,7 +57,7 @@ export default function ParametersPanel({ isOpen, onClose }: ParametersPanelProp
             </div>
             <h2 className="text-lg font-semibold text-gray-900">Generation Parameters</h2>
           </div>
-          <button 
+          <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
           >
@@ -56,7 +66,25 @@ export default function ParametersPanel({ isOpen, onClose }: ParametersPanelProp
         </div>
 
         {/* Parameters */}
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+          {/* System Prompt */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-semibold text-gray-900">System Prompt</label>
+            </div>
+            <textarea
+              value={localSystemPrompt}
+              onChange={(e) => handleSystemPromptChange(e.target.value)}
+              placeholder="e.g. You are a helpful assistant who speaks like a pirate."
+              className="w-full h-24 px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm resize-none"
+            />
+            <p className="text-xs text-gray-600 mt-2">
+              Sets the behavior/persona for all new chats.
+            </p>
+          </div>
+
+          <div className="border-t border-gray-100"></div>
+
           {/* Temperature */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -172,7 +200,7 @@ export default function ParametersPanel({ isOpen, onClose }: ParametersPanelProp
             <RefreshCw size={16} />
             <span className="text-sm font-medium">Reset</span>
           </button>
-          
+
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
@@ -182,11 +210,10 @@ export default function ParametersPanel({ isOpen, onClose }: ParametersPanelProp
             </button>
             <button
               onClick={handleSave}
-              className={`px-6 py-2 rounded-xl font-medium transition-all duration-200 ${
-                hasChanges
+              className={`px-6 py-2 rounded-xl font-medium transition-all duration-200 ${hasChanges
                   ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md'
                   : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-              }`}
+                }`}
               disabled={!hasChanges}
             >
               Save Parameters

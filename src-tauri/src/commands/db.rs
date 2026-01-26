@@ -11,6 +11,7 @@ pub struct ChatMeta {
 	pub model: Option<String>,
 	pub system_prompt: Option<String>,
 	pub params_json: Option<String>,
+	pub title: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -28,17 +29,19 @@ pub async fn db_create_chat(model: Option<String>, system_prompt: Option<String>
 	let pool = get_pool().await?;
 	let id = Uuid::new_v4().to_string();
 	let now = chrono::Utc::now().timestamp_millis();
-	sqlx::query("INSERT INTO chats (id, created_at, updated_at, model, system_prompt, params_json) VALUES (?,?,?,?,?,?)")
+	let title: Option<String> = None;
+	sqlx::query("INSERT INTO chats (id, created_at, updated_at, model, system_prompt, params_json, title) VALUES (?,?,?,?,?,?,?)")
 		.bind(&id)
 		.bind(now)
 		.bind(now)
 		.bind(&model)
 		.bind(&system_prompt)
 		.bind(&params_json)
+		.bind(&title)
 		.execute(&pool)
 		.await
 		.map_err(|e| format!("create chat failed: {}", e))?;
-	Ok(ChatMeta { id, created_at: now, updated_at: now, model, system_prompt, params_json })
+	Ok(ChatMeta { id, created_at: now, updated_at: now, model, system_prompt, params_json, title })
 }
 
 #[tauri::command]
@@ -73,11 +76,23 @@ pub async fn db_set_chat_model(chat_id: String, model: String) -> Result<bool, S
 }
 
 #[tauri::command]
+pub async fn db_set_chat_title(chat_id: String, title: String) -> Result<bool, String> {
+	let pool = get_pool().await?;
+	let res = sqlx::query("UPDATE chats SET title = ? WHERE id = ?")
+		.bind(title)
+		.bind(chat_id)
+		.execute(&pool)
+		.await
+		.map_err(|e| format!("set chat title failed: {}", e))?;
+	Ok(res.rows_affected() > 0)
+}
+
+#[tauri::command]
 pub async fn db_list_chats(limit: Option<i64>) -> Result<Vec<ChatMeta>, String> {
 	let pool = get_pool().await?;
 	let l = limit.unwrap_or(100);
 	let rows = sqlx::query_as::<_, ChatMeta>(
-		"SELECT id, created_at, updated_at, model, system_prompt, params_json FROM chats ORDER BY updated_at DESC LIMIT ?"
+		"SELECT id, created_at, updated_at, model, system_prompt, params_json, title FROM chats ORDER BY updated_at DESC LIMIT ?"
 	)
 	.bind(l)
 	.fetch_all(&pool)
@@ -94,6 +109,7 @@ pub struct ChatWithFlags {
 	pub model: Option<String>,
 	pub system_prompt: Option<String>,
 	pub params_json: Option<String>,
+	pub title: Option<String>,
 	pub has_messages: bool,
 }
 
@@ -102,7 +118,7 @@ pub async fn db_list_chats_with_flags(limit: Option<i64>) -> Result<Vec<ChatWith
 	let pool = get_pool().await?;
 	let l = limit.unwrap_or(100);
 	let rows = sqlx::query_as::<_, ChatWithFlags>(
-		r#"SELECT c.id, c.created_at, c.updated_at, c.model, c.system_prompt, c.params_json,
+		r#"SELECT c.id, c.created_at, c.updated_at, c.model, c.system_prompt, c.params_json, c.title,
 		   EXISTS(SELECT 1 FROM messages m WHERE m.chat_id = c.id LIMIT 1) AS has_messages
 		   FROM chats c ORDER BY c.updated_at DESC LIMIT ?"#
 	)
