@@ -2,11 +2,13 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from './settingsStore'
+import { useModelsStore } from './modelsStore'
 
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  images?: string[]
   timestamp: number
   isStreaming?: boolean
 }
@@ -38,7 +40,7 @@ interface ChatState {
   updateMessage: (id: string, content: string) => void
   updateStreamingMessage: (id: string, content: string) => void
   setStreaming: (isStreaming: boolean, messageId?: string, streamId?: string) => void
-  sendMessage: (content: string, options?: ChatOptions) => Promise<void>
+  sendMessage: (content: string, options?: ChatOptions, images?: string[]) => Promise<void>
   stopStreaming: () => void
   clearMessages: () => void
   generateAutoTitle: (chatId: string, userContent: string) => Promise<void>
@@ -83,12 +85,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       set({ currentChatId: chatId, messages: [], currentSystemPrompt: systemPrompt || null })
       const rows = await invoke<any>('db_list_messages', { chatId, limit: 1000 })
-      const msgs: ChatMessage[] = (rows as any[]).map((r) => ({
-        id: r.id,
-        role: (r.role as 'user' | 'assistant' | 'system'),
-        content: r.content,
-        timestamp: Number(r.created_at) || Date.now(),
-      }))
+      const msgs: ChatMessage[] = (rows as any[]).map((r) => {
+        let images: string[] | undefined
+        try {
+          if (r.meta_json) {
+            const meta = JSON.parse(r.meta_json)
+            if (meta.images && Array.isArray(meta.images)) {
+              images = meta.images
+            }
+          }
+        } catch (e) { }
+
+        return {
+          id: r.id,
+          role: (r.role as 'user' | 'assistant' | 'system'),
+          content: r.content,
+          images,
+          timestamp: Number(r.created_at) || Date.now(),
+        }
+      })
       set({ messages: msgs })
       return true
     } catch (e) {
@@ -180,7 +195,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
   },
 
-  sendMessage: async (content, options) => {
+  sendMessage: async (content: string, options?: ChatOptions, images?: string[]) => {
     const state = get()
 
     if (state.isStreaming) {
@@ -204,6 +219,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     state.addMessage({
       role: 'user',
       content: content.trim(),
+      images,
     })
     // Persist user message
     const chatId = get().currentChatId
@@ -213,7 +229,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (state.currentModel) {
           invoke('db_set_chat_model', { chatId, model: state.currentModel }).catch(() => { })
         }
-        await invoke('db_append_message', { chatId, role: 'user', content: content.trim(), metaJson: null })
+
+        const metaJson = images && images.length > 0 ? JSON.stringify({ images }) : null
+        await invoke('db_append_message', { chatId, role: 'user', content: content.trim(), metaJson })
         // Inform listeners (Sidebar) to refresh chats ordering
         window.dispatchEvent(new CustomEvent('chats-refresh'))
       } catch (e) {
@@ -399,12 +417,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .map(msg => ({
           role: msg.role,
           content: msg.content,
+          images: msg.images,
         }))
 
       // Inject system prompt if it exists
       const freshState = get()
       if (freshState.currentSystemPrompt) {
-        apiMessages.unshift({ role: 'system', content: freshState.currentSystemPrompt })
+        apiMessages.unshift({ role: 'system', content: freshState.currentSystemPrompt, images: undefined })
       }
 
       // Send the chat request
@@ -467,6 +486,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const context = userContent.slice(0, 500)
 
+    // Select the best model for titling (prefer text models over vision/small models if available)
+    const { models } = useModelsStore.getState()
+    // Prioritize fast, instruction-following models. Avoid reasoning models (r1) if possible for this simple task.
+    const preferredTextModels = ['llama3.2', 'mistral', 'gemma2', 'qwen2.5-coder', 'qwen2.5', 'llama3.1', 'phi', 'tinyllama']
+
+    let titleModel = state.currentModel
+
+    // If current model is likely a VLM or very small, try to find a better text model
+    const isVLM = ['moondream', 'llava', 'vl'].some(k => state.currentModel.includes(k))
+
+    if (isVLM) {
+      // Try to find a non-reasoning model first
+      let betterModel = models.find(m =>
+        preferredTextModels.some(p => m.name.includes(p)) && !m.name.includes('r1')
+      )
+
+      // Fallback to reasoning models if no other choice (e.g. only deepseek-r1 installed)
+      if (!betterModel) {
+        betterModel = models.find(m => preferredTextModels.some(p => m.name.includes(p)) || m.name.includes('deepseek'))
+      }
+
+      if (betterModel) {
+        titleModel = betterModel.name
+        console.log('🧠 Switching to better text model for titling:', titleModel)
+      }
+    }
+
     let titleAccumulator = ''
     let titleStreamId: string | null = null
     let isDone = false
@@ -520,13 +566,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       try {
         await invoke('chat_stream', {
           request: {
-            model: state.currentModel,
+            model: titleModel,
             messages: [
               { role: 'system', content: 'Generate a very short title (3-5 words) for the user message. Output ONLY the title text. Do not use quotes.' },
               { role: 'user', content: `Message: "${context}"` }
             ],
             stream: true,
-            options: { temperature: 0.7, max_tokens: 50 }
+            // DeepSeek R1 needs more tokens to "think", even for short answers
+            options: { temperature: 0.7, max_tokens: titleModel.includes('thinking') || titleModel.includes('r1') ? 2048 : 256 }
           }
         })
       } catch (e) {
@@ -535,8 +582,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     })
 
+    // Helper to strip <think> tags (common in reasoning models)
+    const stripThinkTags = (text: string) => {
+      return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+    }
+
     // Process result
-    const cleanTitle = titleAccumulator.replace(/["']/g, '').trim()
+    let cleanTitle = stripThinkTags(titleAccumulator).replace(/["']/g, '').trim()
+
+    // Fallback logic: if empty, try to derive from text manually
+    if (!cleanTitle && context.length > 0) {
+      // Very basic fallback
+      cleanTitle = context.split(' ').slice(0, 4).join(' ') + '...'
+    }
 
     if (cleanTitle) {
       await invoke('db_set_chat_title', { chatId, title: cleanTitle })

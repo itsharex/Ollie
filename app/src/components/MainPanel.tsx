@@ -1,4 +1,4 @@
-import { Bot, ArrowUp, Square, ArrowDown } from 'lucide-react'
+import { Bot, ArrowUp, Square, ArrowDown, Paperclip, X, FileText } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { useChatStore } from '../store/chatStore'
 import Message from './Message'
@@ -7,8 +7,10 @@ export default function MainPanel() {
   const [message, setMessage] = useState('')
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
+  const [attachments, setAttachments] = useState<{ type: 'image' | 'file', name: string, content: string, preview?: string }[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Subscribe to all relevant state to force re-renders
   const {
@@ -47,12 +49,66 @@ export default function MainPanel() {
     }
   }, [messages, updateCounter, shouldAutoScroll]) // Depend on messages AND updateCounter (for streaming)
 
-  const handleSendMessage = async () => {
-    if (!message.trim() || isStreaming || !currentModel) return
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files)
+      const newAttachments = [...attachments]
 
-    const messageContent = message.trim()
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          // Read as Base64 for Vision
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            if (typeof e.target?.result === 'string') {
+              newAttachments.push({ type: 'image', name: file.name, content: e.target.result, preview: e.target.result })
+              setAttachments([...newAttachments])
+            }
+          }
+          reader.readAsDataURL(file)
+        } else {
+          // Read as Text for context
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            if (typeof e.target?.result === 'string') {
+              newAttachments.push({ type: 'file', name: file.name, content: e.target.result })
+              setAttachments([...newAttachments])
+            }
+          }
+          reader.readAsText(file)
+        }
+      }
+    }
+  }
+
+  const removeAttachment = (index: number) => {
+    const newAttachments = [...attachments]
+    newAttachments.splice(index, 1)
+    setAttachments(newAttachments)
+  }
+
+  const handleSendMessage = async () => {
+    if ((!message.trim() && attachments.length === 0) || isStreaming || !currentModel) return
+
+    let finalContent = message.trim()
+    const images: string[] = []
+
+    // Process attachments
+    for (const att of attachments) {
+      if (att.type === 'file') {
+        const fileContent = `\n\n--- File: ${att.name} ---\n${att.content}\n---------------------\n`
+        finalContent += fileContent
+      } else if (att.type === 'image') {
+        // Strip the Data URL header mainly for API, but let's see what chatStore expects
+        // Ollama expects base64 string. 
+        // "data:image/png;base64,..." -> split(',')[1]
+        const base64 = att.content.split(',')[1]
+        if (base64) images.push(base64)
+      }
+    }
+
     setMessage('')
-    setShouldAutoScroll(true) // Always scroll to bottom on new message
+    setAttachments([])
+    setShouldAutoScroll(true)
 
     // Reset textarea height
     const textarea = document.querySelector('textarea')
@@ -60,7 +116,7 @@ export default function MainPanel() {
       textarea.style.height = 'auto'
     }
 
-    await sendMessage(messageContent)
+    await sendMessage(finalContent, undefined, images.length > 0 ? images : undefined)
   }
 
   const handleStopStreaming = async () => {
@@ -198,7 +254,49 @@ export default function MainPanel() {
       <div className="border-t border-gray-100 bg-gray-50/50 backdrop-blur-sm">
         <div className="w-full max-w-4xl mx-auto p-6 sm:p-8">
           <div className="relative">
-            <div className="flex items-end gap-4 bg-white border border-gray-200 rounded-3xl p-4 focus-within:ring-2 focus-within:ring-gray-900 focus-within:border-transparent shadow-sm transition-all duration-200">
+            {/* Attachment Preview Area */}
+            {attachments.length > 0 && (
+              <div className="flex gap-3 mb-3 overflow-x-auto pb-2">
+                {attachments.map((att, i) => (
+                  <div key={i} className="relative group flex-shrink-0">
+                    <div className="w-16 h-16 rounded-xl border border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center">
+                      {att.type === 'image' ? (
+                        <img src={att.preview} alt={att.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <FileText size={24} className="text-gray-400" />
+                      )}
+                    </div>
+                    <button
+                      onClick={() => removeAttachment(i)}
+                      className="absolute -top-1.5 -right-1.5 p-1 bg-white rounded-full shadow-md border border-gray-200 hover:bg-red-50 hover:text-red-500 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-[9px] text-white px-1 truncate">
+                      {att.name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-end gap-3 bg-white border border-gray-200 rounded-3xl p-4 focus-within:ring-2 focus-within:ring-gray-900 focus-within:border-transparent shadow-sm transition-all duration-200">
+              <button
+                className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors"
+                title="Attach image or file"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!currentModel || isStreaming}
+              >
+                <Paperclip size={20} />
+              </button>
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+              />
+
               <div className="flex-1">
                 <textarea
                   value={message}
@@ -214,10 +312,10 @@ export default function MainPanel() {
               </div>
               <button
                 className={`p-3 rounded-2xl transition-all duration-200 ${isStreaming
-                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg'
-                    : message.trim() && currentModel
-                      ? 'bg-gray-900 hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg'
+                  : (message.trim() || attachments.length > 0) && currentModel
+                    ? 'bg-gray-900 hover:bg-gray-800 text-white shadow-lg hover:shadow-xl transform hover:-translate-y-0.5'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   }`}
                 disabled={!currentModel && !isStreaming}
                 onClick={isStreaming ? handleStopStreaming : handleSendMessage}

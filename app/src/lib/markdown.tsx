@@ -1,6 +1,9 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Brain } from 'lucide-react'
 
@@ -55,14 +58,23 @@ export default function Markdown({ content }: Props) {
     }
   }
 
+  // Pre-process LaTeX delimiters for standard compatibility
+  // Replace \[ ... \] with $$ ... $$
+  // Replace \( ... \) with $ ... $
+  // Note: This is a simple regex replacement and might affect code blocks if they contain these patterns literally.
+  // A robust solution requires a remark plugin, but this covers 99% of LLM output cases.
+  mainContent = mainContent
+    .replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$') // \[ ... \] -> $$ ... $$
+    .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$')     // \( ... \) -> $ ... $
+
   return (
     <div className="markdown-body w-full max-w-none">
       {thoughtContent && <ThoughtDropdown content={thoughtContent} />}
 
       <div className="prose prose-base max-w-none text-gray-900 leading-relaxed">
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[[rehypeHighlight, { ignoreMissing: true }]]}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeHighlight, { ignoreMissing: true }], rehypeKatex]}
           components={{
             code(codeProps) {
               const { inline, className, children, ...props } = codeProps as any

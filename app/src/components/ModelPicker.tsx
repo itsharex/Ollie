@@ -4,6 +4,8 @@ import { Download, Trash2, Info, Check } from 'lucide-react'
 import { useChatStore } from '../store/chatStore'
 import { useSettingsStore } from '../store/settingsStore'
 import ProgressBar from './ProgressBar'
+import ModelInfoModal from './ModelInfoModal'
+import type { ModelInfo } from '../store/modelsStore'
 
 const RECOMMENDED_MODELS = [
 	{ name: 'llama3.2', description: 'Meta\'s latest lightweight model, great for speed.', size: '2.0 GB', tags: ['Fast', 'General'] },
@@ -13,11 +15,18 @@ const RECOMMENDED_MODELS = [
 	{ name: 'qwen2.5-coder:1.5b', description: 'Specialized for code generation and analysis.', size: '1.0 GB', tags: ['Coding'] },
 ]
 
+const RECOMMENDED_VISION_MODELS = [
+	{ name: 'moondream', description: 'Tiny but mighty vision model. Runs fast on any device.', size: '1.7 GB', tags: ['Vision', 'Fast'] },
+	{ name: 'llava', description: 'The classic open vision assistant. Reliable performance.', size: '4.5 GB', tags: ['Vision', 'Balanced'] },
+	{ name: 'qwen2.5-vl:3b', description: 'State-of-the-art visual understanding from Qwen.', size: '3.2 GB', tags: ['Vision', 'Smart'] },
+]
+
 export default function ModelPicker() {
 	const { models, fetchModels, pullModel, deleteModel, showModel, pulls } = useModelsStore()
 	const { setCurrentModel, currentModel } = useChatStore()
 	const { setDefaultModel, saveSettingsToBackend, defaultModel } = useSettingsStore()
 	const [newModel, setNewModel] = useState('')
+	const [selectedModelInfo, setSelectedModelInfo] = useState<{ name: string, info: ModelInfo } | null>(null)
 
 	return (
 		<div className="space-y-6">
@@ -73,7 +82,47 @@ export default function ModelPicker() {
 					))}
 					{RECOMMENDED_MODELS.every(rm => models.some(m => m.name.startsWith(rm.name.split(':')[0]))) && (
 						<div className="col-span-full py-8 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-							All recommended models are installed! 🎉
+							All recommended chat models are installed! 🎉
+						</div>
+					)}
+				</div>
+			</div>
+
+			{/* Recommended Vision Models */}
+			<div className="space-y-3">
+				<h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+					<span>Recommended Vision Models</span>
+					<span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">For images</span>
+				</h3>
+				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					{RECOMMENDED_VISION_MODELS.filter(rm => !models.some(m => m.name.startsWith(rm.name.split(':')[0]))).map((rm) => (
+						<div key={rm.name} className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col">
+							<div className="flex justify-between items-start mb-2">
+								<div className="font-semibold text-gray-900">{rm.name}</div>
+								<div className="text-xs text-gray-500 bg-white/50 px-2 py-1 rounded-lg">{rm.size}</div>
+							</div>
+							<p className="text-sm text-gray-600 mb-4 flex-1">{rm.description}</p>
+							<div className="flex items-center justify-between mt-auto">
+								<div className="flex gap-2">
+									{rm.tags.map(tag => (
+										<span key={tag} className="text-[10px] font-medium px-2 py-1 bg-white/50 text-purple-700 rounded-md border border-purple-100">
+											{tag}
+										</span>
+									))}
+								</div>
+								<button
+									onClick={() => pullModel(rm.name)}
+									className="p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+									title={`Download ${rm.name}`}
+								>
+									<Download size={16} />
+								</button>
+							</div>
+						</div>
+					))}
+					{RECOMMENDED_VISION_MODELS.every(rm => models.some(m => m.name.startsWith(rm.name.split(':')[0]))) && (
+						<div className="col-span-full py-8 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+							All recommended vision models are installed! 👁️
 						</div>
 					)}
 				</div>
@@ -87,16 +136,22 @@ export default function ModelPicker() {
 							<div className="text-xs text-gray-500 truncate">{(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB</div>
 						</div>
 						<div className="flex items-center gap-2 flex-shrink-0">
-							<button
-								className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 ${currentModel === m.name
-										? 'bg-gradient-to-br from-gray-900 to-gray-800 text-white border-gray-900 shadow-sm'
-										: 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200 hover:border-gray-300'
-									}`}
+							<button className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 ${currentModel === m.name
+								? 'bg-gradient-to-br from-gray-900 to-gray-800 text-white border-gray-900 shadow-sm'
+								: 'bg-white hover:bg-gray-50 text-gray-700 border-gray-200 hover:border-gray-300'
+								}`}
 								onClick={() => setCurrentModel(m.name)}
 							>
 								{currentModel === m.name ? 'In use' : 'Use'}
 							</button>
-							<button className="p-2.5 hover:bg-gray-100 rounded-xl transition-all duration-200 text-gray-500 hover:text-gray-700" onClick={async () => alert(JSON.stringify(await showModel(m.name), null, 2))} title="Model Info">
+							<button
+								className="p-2.5 hover:bg-gray-100 rounded-xl transition-all duration-200 text-gray-500 hover:text-gray-700"
+								onClick={async () => {
+									const info = await showModel(m.name)
+									if (info) setSelectedModelInfo({ name: m.name, info })
+								}}
+								title="Model Info"
+							>
 								<Info size={16} />
 							</button>
 							<button className="p-2.5 hover:bg-gray-100 rounded-xl transition-all duration-200 text-gray-500 hover:text-gray-700" onClick={() => pullModel(m.name)} title="Update Model">
@@ -107,8 +162,8 @@ export default function ModelPicker() {
 							</button>
 							<button
 								className={`p-2.5 rounded-xl transition-all duration-200 ${defaultModel === m.name
-										? 'text-green-600 bg-green-50'
-										: 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
+									? 'text-green-600 bg-green-50'
+									: 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
 									}`}
 								title={defaultModel === m.name ? 'Default model' : 'Set as default'}
 								onClick={async () => { setDefaultModel(m.name); await saveSettingsToBackend(); }}
@@ -164,6 +219,14 @@ export default function ModelPicker() {
 						</div>
 					))}
 				</div>
+			)}
+
+			{selectedModelInfo && (
+				<ModelInfoModal
+					modelName={selectedModelInfo.name}
+					info={selectedModelInfo.info}
+					onClose={() => setSelectedModelInfo(null)}
+				/>
 			)}
 		</div>
 	)

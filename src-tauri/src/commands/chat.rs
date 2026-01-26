@@ -12,6 +12,7 @@ use crate::commands::monitoring;
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    pub images: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

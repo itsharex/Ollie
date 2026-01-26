@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { persist } from 'zustand/middleware'
 
 // Types for monitoring data
 export interface SystemMetrics {
@@ -39,19 +40,20 @@ interface MonitoringState {
   // System monitoring
   systemMetrics: SystemMetrics[]
   currentSystemMetrics: SystemMetrics | null
-  
+
   // Model performance
   modelMetrics: ModelMetrics[]
   currentModelMetrics: Record<string, ModelMetrics>
-  
+
   // Ollama status
   ollamaStatus: OllamaStatus | null
-  
+
   // Monitoring controls
-  isMonitoring: boolean
+  isMonitoring: boolean // Active connection state (not persisted)
+  monitoringEnabled: boolean // User preference (persisted)
   monitoringInterval: number // milliseconds
   maxHistoryLength: number
-  
+
   // Actions
   startMonitoring: () => Promise<void>
   stopMonitoring: () => Promise<void>
@@ -62,7 +64,7 @@ interface MonitoringState {
   getOllamaStatus: () => Promise<void>
 }
 
-export const useMonitoringStore = create<MonitoringState>((set, get) => ({
+export const useMonitoringStore = create<MonitoringState>()(persist((set, get) => ({
   // Helpers to normalize backend snake_case to frontend camelCase and coerce numbers
   // Keep these inside the factory to avoid top-level pollution
   _toNumber: (v: any, fallback = 0): number => {
@@ -118,22 +120,23 @@ export const useMonitoringStore = create<MonitoringState>((set, get) => ({
   currentModelMetrics: {},
   ollamaStatus: null,
   isMonitoring: false,
+  monitoringEnabled: false,
   monitoringInterval: 2000, // 2 seconds
   maxHistoryLength: 100, // Keep last 100 data points
-  
+
   // Start monitoring system and model metrics
   startMonitoring: async () => {
     const state = get()
     if (state.isMonitoring) return
-    
-    set({ isMonitoring: true })
-    
+
+    set({ isMonitoring: true, monitoringEnabled: true })
+
     try {
       // Start system monitoring via Rust backend
-      await invoke('start_system_monitoring', { 
-        interval_ms: state.monitoringInterval 
+      await invoke('start_system_monitoring', {
+        interval_ms: state.monitoringInterval
       })
-      
+
       // Listen for system metrics events
       const unlistenSystem = await listen('monitoring:system-metrics', (event: any) => {
         const raw = event.payload
@@ -143,7 +146,7 @@ export const useMonitoringStore = create<MonitoringState>((set, get) => ({
           systemMetrics: [...state.systemMetrics.slice(-state.maxHistoryLength + 1), metrics]
         }))
       })
-      
+
       // Listen for model metrics events
       const unlistenModel = await listen('monitoring:model-metrics', (event: any) => {
         const raw = event.payload
@@ -156,33 +159,33 @@ export const useMonitoringStore = create<MonitoringState>((set, get) => ({
           modelMetrics: [...state.modelMetrics.slice(-state.maxHistoryLength + 1), metrics]
         }))
       })
-      
+
       // Listen for Ollama status updates
       const unlistenStatus = await listen('monitoring:ollama-status', (event: any) => {
         const raw = event.payload
         const status = (get() as any)._normalizeOllamaStatus(raw)
         set({ ollamaStatus: status })
       })
-      
-      // Store cleanup functions globally for stopping
-      ;(window as any).monitoringCleanup = {
-        unlistenSystem,
-        unlistenModel,
-        unlistenStatus
-      }
-      
+
+        // Store cleanup functions globally for stopping
+        ; (window as any).monitoringCleanup = {
+          unlistenSystem,
+          unlistenModel,
+          unlistenStatus
+        }
+
       console.log('📊 Monitoring started successfully')
     } catch (error) {
       console.error('Failed to start monitoring:', error)
       set({ isMonitoring: false })
     }
   },
-  
+
   // Stop monitoring
   stopMonitoring: async () => {
     try {
       await invoke('stop_system_monitoring')
-      
+
       // Clean up event listeners
       const cleanup = (window as any).monitoringCleanup
       if (cleanup) {
@@ -191,18 +194,19 @@ export const useMonitoringStore = create<MonitoringState>((set, get) => ({
         cleanup.unlistenStatus?.()
         delete (window as any).monitoringCleanup
       }
-      
-      set({ isMonitoring: false })
+
       console.log('📊 Monitoring stopped')
     } catch (error) {
       console.error('Failed to stop monitoring:', error)
+    } finally {
+      set({ isMonitoring: false, monitoringEnabled: false })
     }
   },
-  
+
   // Set monitoring interval
   setMonitoringInterval: (interval: number) => {
     set({ monitoringInterval: interval })
-    
+
     // Restart monitoring with new interval if currently active
     const state = get()
     if (state.isMonitoring) {
@@ -211,7 +215,7 @@ export const useMonitoringStore = create<MonitoringState>((set, get) => ({
       })
     }
   },
-  
+
   // Clear monitoring history
   clearHistory: () => {
     set({
@@ -220,23 +224,27 @@ export const useMonitoringStore = create<MonitoringState>((set, get) => ({
       currentModelMetrics: {}
     })
   },
-  
+
   // Get current system health
   getSystemHealth: async () => {
     try {
-  const raw = await invoke<any>('get_system_metrics')
-  const metrics = (get() as any)._normalizeSystemMetrics(raw)
-  set({ currentSystemMetrics: metrics })
+      const raw = await invoke<any>('get_system_metrics')
+      const metrics = (get() as any)._normalizeSystemMetrics(raw)
+      set(state => ({
+        currentSystemMetrics: metrics,
+        // Add snapshot to history so charts aren't empty
+        systemMetrics: [...state.systemMetrics, metrics].slice(-state.maxHistoryLength)
+      }))
     } catch (error) {
       console.error('Failed to get system health:', error)
     }
   },
-  
+
   // Get model performance data
   getModelPerformance: async (modelName?: string) => {
     try {
-      const raw = await invoke<any[]>('get_model_metrics', { 
-        model_name: modelName 
+      const raw = await invoke<any[]>('get_model_metrics', {
+        model_name: modelName
       })
       const normalized: ModelMetrics[] = (raw || []).map((m: any) => (get() as any)._normalizeModelMetrics(m))
       const metricsMap: Record<string, ModelMetrics> = {}
@@ -250,17 +258,24 @@ export const useMonitoringStore = create<MonitoringState>((set, get) => ({
       console.error('Failed to get model performance:', error)
     }
   },
-  
+
   // Get Ollama server status
   getOllamaStatus: async () => {
     try {
-  const raw = await invoke<any>('get_ollama_status')
-  const status = (get() as any)._normalizeOllamaStatus(raw)
-  set({ ollamaStatus: status })
+      const raw = await invoke<any>('get_ollama_status')
+      const status = (get() as any)._normalizeOllamaStatus(raw)
+      set({ ollamaStatus: status })
     } catch (error) {
       console.error('Failed to get Ollama status:', error)
     }
   }
+}), {
+  name: 'monitoring-storage',
+  partialize: (state) => ({
+    monitoringEnabled: state.monitoringEnabled,
+    monitoringInterval: state.monitoringInterval,
+    maxHistoryLength: state.maxHistoryLength
+  })
 }))
 
 // Auto-cleanup on page unload

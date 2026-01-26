@@ -16,18 +16,33 @@ export interface OllamaModel {
   }
 }
 
+export interface ModelInfo {
+  license: string
+  modelfile: string
+  parameters: string
+  template: string
+  system: string
+  details: {
+    format: string
+    family: string
+    families: string[]
+    parameter_size: string
+    quantization_level: string
+  }
+}
+
 interface ModelsState {
   models: OllamaModel[]
   isLoading: boolean
   error: string | null
   // Pull progress keyed by pull_id
   pulls: Record<string, any>
-  
+
   // Actions
   fetchModels: () => Promise<void>
   pullModel: (name: string) => Promise<string | null>
   deleteModel: (name: string) => Promise<boolean>
-  showModel: (name: string) => Promise<any | null>
+  showModel: (name: string) => Promise<ModelInfo | null>
   clearError: () => void
 }
 
@@ -36,10 +51,10 @@ export const useModelsStore = create<ModelsState>((set) => ({
   isLoading: false,
   error: null,
   pulls: {},
-  
+
   fetchModels: async () => {
     set({ isLoading: true, error: null })
-    
+
     try {
       // For now, we'll implement a basic models list
       // This will be connected to the actual Ollama API later
@@ -47,10 +62,10 @@ export const useModelsStore = create<ModelsState>((set) => ({
       set({ models: result.models || [], isLoading: false })
     } catch (error) {
       console.error('Failed to fetch models:', error)
-      set({ 
-        models: [], 
-        isLoading: false, 
-        error: error as string 
+      set({
+        models: [],
+        isLoading: false,
+        error: error as string
       })
     }
   },
@@ -76,7 +91,7 @@ export const useModelsStore = create<ModelsState>((set) => ({
         const { pull_id } = e.payload
         set((s) => ({ pulls: { ...s.pulls, [pull_id]: { ...(s.pulls[pull_id] || {}), status: 'complete' } } }))
         // refresh list when done
-        useModelsStore.getState().fetchModels().catch(() => {})
+        useModelsStore.getState().fetchModels().catch(() => { })
         // cleanup listeners
         unlistenStart()
         unlistenProgress()
@@ -107,13 +122,13 @@ export const useModelsStore = create<ModelsState>((set) => ({
   },
   showModel: async (name: string) => {
     try {
-      const res = await invoke('model_show', { name })
+      const res = await invoke('model_show', { name }) as ModelInfo
       return res
     } catch (e) {
       set({ error: String(e) })
       return null
     }
   },
-  
+
   clearError: () => set({ error: null }),
 }))
