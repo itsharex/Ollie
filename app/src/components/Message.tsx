@@ -1,4 +1,4 @@
-import { Bot, User, Copy, Check } from 'lucide-react'
+import { User, Copy, Check } from 'lucide-react'
 import { useState } from 'react'
 import type { ChatMessage } from '../store/chatStore'
 import Markdown from '../lib/markdown'
@@ -30,12 +30,12 @@ export default function Message({ message }: MessageProps) {
       {/* Avatar */}
       <div className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm ${isUser
         ? 'bg-gradient-to-br from-blue-600 to-blue-700'
-        : 'bg-gradient-to-br from-gray-900 to-gray-700'
+        : 'bg-white border border-gray-100'
         }`}>
         {isUser ? (
           <User size={20} className="text-white" />
         ) : (
-          <Bot size={20} className="text-white" />
+          <img src="/ollie-logo.png" alt="Ollie" className="w-6 h-6 object-contain" />
         )}
       </div>
 
@@ -45,7 +45,7 @@ export default function Message({ message }: MessageProps) {
           <div className="flex-1">
             <div className={`text-sm font-semibold mb-3 ${isUser ? 'text-blue-900' : 'text-gray-900'
               }`}>
-              {isUser ? 'You' : 'Assistant'}
+              {isUser ? 'You' : 'Ollie'}
             </div>
 
             {/* Attached Images */}
