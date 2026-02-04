@@ -41,6 +41,7 @@ interface ChatState {
   updateStreamingMessage: (id: string, content: string) => void
   setStreaming: (isStreaming: boolean, messageId?: string, streamId?: string) => void
   sendMessage: (content: string, options?: ChatOptions, images?: string[]) => Promise<void>
+  editUserMessage: (messageId: string, newContent: string) => Promise<void>
   stopStreaming: () => void
   clearMessages: () => void
   generateAutoTitle: (chatId: string, userContent: string) => Promise<void>
@@ -454,6 +455,189 @@ export const useChatStore = create<ChatState>((set, get) => ({
       console.error('Failed to send message:', error)
       state.setStreaming(false)
       state.updateMessage(assistantMessageId, `Error: ${error}`)
+      cleanup()
+    }
+  },
+
+  editUserMessage: async (messageId: string, newContent: string) => {
+    const state = get()
+    if (state.isStreaming) {
+      await state.stopStreaming()
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+
+    const msgIndex = state.messages.findIndex(m => m.id === messageId)
+    if (msgIndex === -1) {
+      console.error('Message to edit not found')
+      return
+    }
+
+    const message = state.messages[msgIndex]
+    const chatId = state.currentChatId
+
+    if (!chatId) {
+      console.error('No current chat ID')
+      return
+    }
+
+    // 1. Update Database
+    try {
+      await invoke('db_update_message', { id: messageId, content: newContent })
+      // Delete all messages after this one (maintain context consistency)
+      await invoke('db_delete_messages_after', { chatId, timestamp: message.timestamp })
+    } catch (e) {
+      console.error('Failed to update/truncate DB for edit:', e)
+      return
+    }
+
+    // 2. Update Local State
+    // Truncate messages to just include this one and prior ones
+    const truncatedMessages = state.messages.slice(0, msgIndex + 1)
+    // Update content of the edited message
+    truncatedMessages[msgIndex] = { ...message, content: newContent }
+
+    set({ messages: truncatedMessages })
+
+    // 3. Trigger Generation (Re-use logic from sendMessage mostly)
+
+    // Add assistant message placeholder
+    const assistantMessageId = state.addMessage({
+      role: 'assistant',
+      content: '',
+      isStreaming: true,
+    })
+
+    let currentStreamId: string | null = null
+
+    // --- Listener Implementation (Duplicate of sendMessage) ---
+    // Ideally this should be refactored into a reusable `generateResponse` function
+
+    let unlistenChunk: (() => void) | null = null
+    let unlistenError: (() => void) | null = null
+    let unlistenComplete: (() => void) | null = null
+    let unlistenStreamStart: (() => void) | null = null
+    let unlistenCancelled: (() => void) | null = null
+
+    const cleanup = () => {
+      console.log('Cleaning up event listeners for message:', assistantMessageId)
+      if (unlistenChunk) unlistenChunk()
+      if (unlistenError) unlistenError()
+      if (unlistenComplete) unlistenComplete()
+      if (unlistenStreamStart) unlistenStreamStart()
+      if (unlistenCancelled) unlistenCancelled()
+    }
+
+    try {
+      let persisted = false
+
+      unlistenStreamStart = await listen('chat:stream-start', (event: any) => {
+        const { stream_id } = event.payload as { stream_id: string }
+        currentStreamId = stream_id
+        get().setStreaming(true, assistantMessageId, stream_id)
+      })
+
+      unlistenCancelled = await listen('chat:cancelled', (event: any) => {
+        const { stream_id } = event.payload as { stream_id: string }
+        if (stream_id === currentStreamId) {
+          get().setStreaming(false)
+          cleanup()
+        }
+      })
+
+      unlistenChunk = await listen('chat:chunk', (event: any) => {
+        const chunk = event.payload as { message?: { role?: string; content?: string }; done?: boolean }
+        const currentState = get()
+        if (currentState.streamingMessageId !== assistantMessageId) return
+
+        const part = chunk?.message?.content ?? ''
+        if (part.length > 0) {
+          const currentMessage = currentState.messages.find(m => m.id === assistantMessageId)
+          if (currentMessage) {
+            currentState.updateStreamingMessage(assistantMessageId, (currentMessage.content || '') + part)
+          }
+        }
+
+        if (chunk?.done) {
+          const finalState = get()
+          finalState.setStreaming(false)
+          const currentMessage = finalState.messages.find(m => m.id === assistantMessageId)
+          if (currentMessage) {
+            finalState.updateMessage(assistantMessageId, currentMessage.content || '')
+            if (!persisted && chatId) {
+              invoke('db_append_message', { chatId, role: 'assistant', content: currentMessage.content || '', metaJson: null })
+                .then(() => window.dispatchEvent(new CustomEvent('chats-refresh')))
+                .catch((e) => console.warn('db_append_message (assistant) failed', e))
+              persisted = true
+            }
+          }
+          cleanup()
+        }
+      })
+
+      unlistenError = await listen('chat:error', (event: any) => {
+        const payload = event.payload as { stream_id?: string; error?: string }
+        if (payload?.stream_id && payload.stream_id !== currentStreamId) return
+
+        const st = get()
+        st.setStreaming(false)
+        const currentMessage = st.messages.find(m => m.id === assistantMessageId)
+        if (currentMessage && !currentMessage.content) {
+          st.updateMessage(assistantMessageId, `Error: ${payload?.error || 'Failed'}`)
+        }
+        cleanup()
+      })
+
+      unlistenComplete = await listen('chat:complete', (event: any) => {
+        const payload = event.payload as { completed: boolean; stream_id?: string }
+        if (payload.stream_id && payload.stream_id !== currentStreamId) return
+
+        const st = get()
+        if (st.isStreaming && st.streamingMessageId === assistantMessageId) {
+          st.setStreaming(false)
+          const currentMessage = st.messages.find(m => m.id === assistantMessageId)
+          if (currentMessage) {
+            st.updateMessage(assistantMessageId, currentMessage.content)
+            if (!persisted && chatId) {
+              invoke('db_append_message', { chatId, role: 'assistant', content: currentMessage.content || '', metaJson: null })
+                .then(() => window.dispatchEvent(new CustomEvent('chats-refresh')))
+                .catch((e) => console.warn('db_append_message (assistant) failed', e))
+              persisted = true
+            }
+          }
+        }
+        cleanup()
+      })
+
+      get().setStreaming(true, assistantMessageId)
+
+      // Prepare messages
+      const latest = get()
+      const apiMessages = latest.messages
+        .filter(msg => msg.role !== 'assistant' || msg.content.trim() !== '')
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          images: msg.images,
+        }))
+
+      const freshState = get()
+      if (freshState.currentSystemPrompt) {
+        apiMessages.unshift({ role: 'system', content: freshState.currentSystemPrompt, images: undefined })
+      }
+
+      await invoke('chat_stream', {
+        request: {
+          model: state.currentModel,
+          messages: apiMessages,
+          stream: true,
+          options: undefined // Use defaults for edit regenerate for now
+        },
+      })
+
+    } catch (error) {
+      console.error('Failed to regenerate message:', error)
+      get().setStreaming(false)
+      get().updateMessage(assistantMessageId, `Error: ${error}`)
       cleanup()
     }
   },

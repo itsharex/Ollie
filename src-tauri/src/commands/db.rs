@@ -154,3 +154,27 @@ pub async fn db_delete_chat(chat_id: String) -> Result<bool, String> {
 		.map_err(|e| format!("delete chat failed: {}", e))?;
 	Ok(res.rows_affected() > 0)
 }
+
+#[tauri::command]
+pub async fn db_update_message(id: String, content: String) -> Result<bool, String> {
+	let pool = get_pool().await?;
+	let res = sqlx::query("UPDATE messages SET content = ? WHERE id = ?")
+		.bind(content)
+		.bind(id)
+		.execute(&pool)
+		.await
+		.map_err(|e| format!("update message failed: {}", e))?;
+	Ok(res.rows_affected() > 0)
+}
+
+#[tauri::command]
+pub async fn db_delete_messages_after(chat_id: String, timestamp: i64) -> Result<u64, String> {
+	let pool = get_pool().await?;
+	let res = sqlx::query("DELETE FROM messages WHERE chat_id = ? AND created_at > ?")
+		.bind(chat_id)
+		.bind(timestamp)
+		.execute(&pool)
+		.await
+		.map_err(|e| format!("delete messages after failed: {}", e))?;
+	Ok(res.rows_affected())
+}

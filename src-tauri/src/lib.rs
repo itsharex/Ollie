@@ -23,6 +23,8 @@ pub fn run() {
       commands::db::db_list_chats,
       commands::db::db_list_messages,
       commands::db::db_delete_chat,
+      commands::db::db_update_message,
+      commands::db::db_delete_messages_after,
       commands::db::db_set_chat_model,
       commands::db::db_set_chat_title,
       commands::db::db_list_chats_with_flags,

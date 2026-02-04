@@ -4,8 +4,9 @@ import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { ChevronDown, ChevronRight, Brain, FileText } from 'lucide-react'
+import CodeBlock from '../components/CodeBlock'
 
 type Props = {
   content: string
@@ -111,9 +112,9 @@ export default function Markdown({ content }: Props) {
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[[rehypeHighlight, { ignoreMissing: true }], rehypeKatex]}
-          components={{
-            code(codeProps) {
-              const { inline, className, children, ...props } = codeProps as any
+          components={useMemo(() => ({
+            code(codeProps: any) {
+              const { inline, className, children, ...props } = codeProps
               if (inline) {
                 return (
                   <code className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-900 font-mono text-sm" {...props}>
@@ -130,44 +131,27 @@ export default function Markdown({ content }: Props) {
             pre(preProps) {
               const child: any = Array.isArray(preProps.children) ? preProps.children[0] : preProps.children
               let lang = ''
-              let codeText = ''
+              let inner: any = null
+
               if (child && child.props) {
                 const cls = child.props.className || ''
                 const match = /language-(\w+)/.exec(cls)
                 lang = match?.[1] || ''
-                const inner = child.props.children
-                codeText = Array.isArray(inner) ? inner.join('') : String(inner ?? '')
+                inner = child.props.children
               }
-              return (
-                <div className="my-4 overflow-hidden rounded-lg border border-gray-200 shadow-sm bg-[#0a0a0a]">
-                  <div className="px-3 py-2 text-xs text-gray-300 bg-[#111] border-b border-gray-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]"></span>
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]"></span>
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#27c93f]"></span>
-                      </div>
-                      <span className="ml-3 font-mono text-gray-400">{lang || 'text'}</span>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(codeText)
-                          // Ideally show a toast here
-                        } catch { /* noop */ }
-                      }}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
-                    >
-                      <span className="text-xs">Copy</span>
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <pre className="overflow-x-auto p-4 text-sm leading-6 text-gray-300 font-mono bg-[#0a0a0a] scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
-                      {preProps.children}
-                    </pre>
-                  </div>
-                </div>
-              )
+
+              // Helper helper to get raw text for copy/preview from the tree
+              const extractText = (node: any): string => {
+                if (!node) return ''
+                if (typeof node === 'string') return node
+                if (Array.isArray(node)) return node.map(extractText).join('')
+                if (node.props && node.props.children) return extractText(node.props.children)
+                return ''
+              }
+
+              const codeText = extractText(inner)
+
+              return <CodeBlock language={lang} code={codeText}>{inner}</CodeBlock>
             },
             a({ children, ...props }) {
               return (
@@ -197,7 +181,7 @@ export default function Markdown({ content }: Props) {
             blockquote({ children }) {
               return <blockquote className="border-l-4 border-gray-200 pl-4 py-1 my-4 italic text-gray-600">{children}</blockquote>
             }
-          }}
+          }), [])}
         >
           {mainContent || (thoughtContent ? '' : ' ')}
         </ReactMarkdown>
