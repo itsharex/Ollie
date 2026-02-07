@@ -26,9 +26,14 @@ If you want a personal, single-user assistant that feels premium, fast, and alwa
 No configuration needed. Just download and run.
 
 ```bash
-wget -O Ollie.AppImage https://github.com/MedGm/OllamaGUI/releases/latest/download/Ollie_*_amd64.AppImage
-chmod +x Ollie.AppImage
-./Ollie.AppImage
+# Download the AppImage (v0.2.1)
+wget https://github.com/MedGm/OllamaGUI/releases/download/v0.2.1/Ollie_0.2.1_amd64.AppImage
+
+# Make it executable
+chmod +x Ollie_0.2.1_amd64.AppImage
+
+# Run it
+./Ollie_0.2.1_amd64.AppImage
 ```
 
 *Requirements: [Ollama](https://ollama.com) installed and running.*
