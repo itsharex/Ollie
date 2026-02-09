@@ -1,4 +1,4 @@
-import { Activity, Cpu, HardDrive, Network } from 'lucide-react'
+import { Activity, Cpu, HardDrive, Network, StopCircle } from 'lucide-react'
 import React, { useEffect } from 'react'
 import { useMonitoringStore } from '../store/monitoringStore'
 
@@ -148,14 +148,27 @@ function MonitoringDashboardInner() {
     startMonitoring,
     stopMonitoring,
     getSystemHealth,
-    getOllamaStatus
+    getOllamaStatus,
+    runningModels,
+    getRunningModels,
+    stopModel
   } = useMonitoringStore()
 
   useEffect(() => {
     // Load snapshot data on mount
     getSystemHealth()
     getOllamaStatus()
+    getRunningModels()
   }, [])
+
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout
+    if (isMonitoring) {
+      getRunningModels() // Initial fetch
+      intervalId = setInterval(getRunningModels, 2000)
+    }
+    return () => clearInterval(intervalId)
+  }, [isMonitoring])
 
 
   // Format bytes to human readable
@@ -257,6 +270,48 @@ function MonitoringDashboardInner() {
         </div>
       </div>
 
+      {/* Running Models (Ollama PS) */}
+      {runningModels.length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">Running Models</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {runningModels.map((model) => (
+              <div key={model.name} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm border-l-4 border-l-green-500">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 truncate" title={model.name}>{model.name}</h3>
+                  <button
+                    onClick={() => stopModel(model.name)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Stop Model"
+                  >
+                    <StopCircle size={20} />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Size</span>
+                    <span className="font-medium text-gray-900">{formatBytes(model.size)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">VRAM</span>
+                    <span className="font-medium text-gray-900">{formatBytes(model.size_vram)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Format</span>
+                    <span className="font-medium text-gray-900">{model.details.format} ({model.details.quantization_level})</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Family</span>
+                    <span className="font-medium text-gray-900">{model.details.family}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Performance Charts */}
       <div>
         <h2 className="text-xl font-semibold text-gray-900 mb-6">Performance History</h2>
@@ -267,7 +322,7 @@ function MonitoringDashboardInner() {
               data={systemMetrics
                 .map((m) => (Number.isFinite(m.cpuUsage) ? (m.cpuUsage as number) : NaN))
                 .filter((v) => Number.isFinite(v)) as number[]}
-              color="#3B82F6"
+              color="#00000"
               height={120}
             />
           </div>
@@ -338,6 +393,7 @@ function MonitoringDashboardInner() {
         </div>
       )}
 
+
       {/* Ollama Server Details */}
       {ollamaStatus && (
         <div>
@@ -356,7 +412,7 @@ function MonitoringDashboardInner() {
 
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-2">Active Streams</h4>
-                <p className="text-lg font-bold text-gray-900">{ollamaStatus.activeStreams}</p>
+                <p className="text-lg font-bold text-gray-900">{runningModels.length}</p>
               </div>
 
               <div>

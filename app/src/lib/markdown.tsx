@@ -102,7 +102,7 @@ export default function Markdown({ content }: Props) {
     .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$')     // \( ... \) -> $ ... $
 
   return (
-    <div className="markdown-body w-full max-w-none">
+    <div className="markdown-body w-full max-w-full overflow-x-auto">
       {thoughtContent && <ThoughtDropdown content={thoughtContent} />}
       {files.map((f, i) => (
         <FileDropdown key={i} name={f.name} content={f.content} />

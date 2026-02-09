@@ -139,7 +139,7 @@ export default function Message({ message }: MessageProps) {
                   </div>
                 )}
 
-                <div className="prose prose-base max-w-none text-gray-900 leading-relaxed">
+                <div className="prose prose-base max-w-full text-gray-900 leading-relaxed overflow-x-auto">
                   {(() => {
                     // Handle DeepSeek <think> blocks
                     const thinkMatch = message.content.match(/<think>([\s\S]*?)<\/think>/)

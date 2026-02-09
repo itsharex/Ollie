@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time;
 use sysinfo::System;
+use crate::commands::settings::get_ollama_url;
 
 // System metrics structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,17 +192,20 @@ async fn collect_ollama_status() -> Result<OllamaStatus, String> {
         .unwrap_or_default()
         .as_secs();
     
+    // Get configured Ollama URL
+    let base_url = get_ollama_url();
+    
     // Try to connect to Ollama API
     let client = reqwest::Client::new();
     
     // Check if Ollama is running
-    match client.get("http://localhost:11434/api/version").send().await {
+    match client.get(format!("{}/api/version", base_url)).send().await {
         Ok(response) => {
             let version_info: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
             let version = version_info["version"].as_str().unwrap_or("unknown").to_string();
             
             // Get loaded models
-            let models_response = client.get("http://localhost:11434/api/tags").send().await;
+            let models_response = client.get(format!("{}/api/tags", base_url)).send().await;
             let models_loaded = if let Ok(resp) = models_response {
                 let models_info: serde_json::Value = resp.json().await.unwrap_or_default();
                 models_info["models"].as_array()
@@ -264,5 +268,79 @@ pub fn track_model_performance(
     
     if let Err(e) = app.emit("monitoring:model-metrics", &metrics) {
         eprintln!("Failed to emit model metrics: {}", e);
+    }
+}
+// ... existing code ...
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaProcess {
+    pub name: String,
+    pub model: String,
+    pub size: u64,
+    pub digest: String,
+    pub details: OllamaModelDetails,
+    pub expires_at: String,
+    pub size_vram: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaModelDetails {
+    pub parent_model: String,
+    pub format: String,
+    pub family: String,
+    pub families: Option<Vec<String>>,
+    pub parameter_size: String,
+    pub quantization_level: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaPsResponse {
+    pub models: Vec<OllamaProcess>,
+}
+
+#[tauri::command]
+pub async fn ollama_ps() -> Result<OllamaPsResponse, String> {
+    let base_url = get_ollama_url();
+    let client = reqwest::Client::new();
+    
+    match client.get(format!("{}/api/ps", base_url)).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                response.json::<OllamaPsResponse>().await.map_err(|e| format!("Failed to parse response: {}", e))
+            } else {
+                Err(format!("Server returned status: {}", response.status()))
+            }
+        }
+        Err(e) => Err(format!("Failed to connect to Ollama: {}", e)),
+    }
+}
+
+#[tauri::command]
+pub async fn stop_model(name: String) -> Result<(), String> {
+    let base_url = get_ollama_url();
+    let client = reqwest::Client::new();
+    
+    // To stop a model, we send a generate request with keep_alive: 0
+    // This unloads the model immediately
+    let payload = serde_json::json!({
+        "model": name,
+        "keep_alive": 0
+    });
+
+    // We can ignore the response stream/body as we just want to trigger unload
+    // But we need to make sure the request is sent successfully
+    match client.post(format!("{}/api/generate", base_url))
+        .json(&payload)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            if response.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Server returned status: {}", response.status()))
+            }
+        },
+        Err(e) => Err(format!("Failed to connect to Ollama: {}", e)),
     }
 }

@@ -35,6 +35,8 @@ pub fn run() {
       commands::monitoring::get_system_metrics,
       commands::monitoring::get_model_metrics,
       commands::monitoring::get_ollama_status,
+      commands::monitoring::ollama_ps,
+      commands::monitoring::stop_model,
       commands::mcp::connect_mcp_server,
       commands::mcp::connect_mcp_http,
       commands::mcp::list_mcp_servers,

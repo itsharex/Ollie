@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use futures_util::StreamExt;
+use crate::commands::settings::get_ollama_url;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ModelDetails {
@@ -27,7 +28,7 @@ pub struct ModelsResponse {
 
 #[tauri::command]
 pub async fn models_list(server_url: Option<String>) -> Result<ModelsResponse, String> {
-    let url = server_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let url = server_url.unwrap_or_else(get_ollama_url);
     let endpoint = format!("{}/api/tags", url);
     
     let client = reqwest::Client::builder()
@@ -58,7 +59,7 @@ pub struct SimpleResponse {
 
 #[tauri::command]
 pub async fn model_delete(name: String, server_url: Option<String>) -> Result<SimpleResponse, String> {
-    let url = server_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let url = server_url.unwrap_or_else(get_ollama_url);
     let endpoint = format!("{}/api/delete", url);
 
     let client = reqwest::Client::builder()
@@ -102,7 +103,7 @@ pub struct ShowResponse {
 
 #[tauri::command]
 pub async fn model_show(name: String, server_url: Option<String>) -> Result<ShowResponse, String> {
-    let url = server_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let url = server_url.unwrap_or_else(get_ollama_url);
     let endpoint = format!("{}/api/show", url);
 
     let client = reqwest::Client::builder()
@@ -127,7 +128,7 @@ pub async fn model_show(name: String, server_url: Option<String>) -> Result<Show
 
 #[tauri::command]
 pub async fn model_pull(app: tauri::AppHandle, name: String, server_url: Option<String>) -> Result<SimpleResponse, String> {
-    let url = server_url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let url = server_url.unwrap_or_else(get_ollama_url);
     let endpoint = format!("{}/api/pull", url);
 
     let pull_id = uuid::Uuid::new_v4().to_string();

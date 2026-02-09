@@ -62,6 +62,28 @@ interface MonitoringState {
   getSystemHealth: () => Promise<void>
   getModelPerformance: (modelName?: string) => Promise<void>
   getOllamaStatus: () => Promise<void>
+
+  // Running models
+  runningModels: OllamaProcess[]
+  getRunningModels: () => Promise<void>
+  stopModel: (name: string) => Promise<boolean>
+}
+
+export interface OllamaProcess {
+  name: string
+  model: string
+  size: number
+  digest: string
+  details: {
+    parent_model: string
+    format: string
+    family: string
+    families: string[]
+    parameter_size: string
+    quantization_level: string
+  }
+  expires_at: string
+  size_vram: number
 }
 
 export const useMonitoringStore = create<MonitoringState>()(persist((set, get) => ({
@@ -119,6 +141,7 @@ export const useMonitoringStore = create<MonitoringState>()(persist((set, get) =
   modelMetrics: [],
   currentModelMetrics: {},
   ollamaStatus: null,
+  runningModels: [],
   isMonitoring: false,
   monitoringEnabled: false,
   monitoringInterval: 2000, // 2 seconds
@@ -268,7 +291,34 @@ export const useMonitoringStore = create<MonitoringState>()(persist((set, get) =
     } catch (error) {
       console.error('Failed to get Ollama status:', error)
     }
-  }
+  },
+
+  // Running models (ollama ps)
+  getRunningModels: async () => {
+    try {
+      const raw = await invoke<any>('ollama_ps')
+      const models = raw?.models || []
+      set({ runningModels: models })
+    } catch (error) {
+      console.error('Failed to get running models:', error)
+      set({ runningModels: [] })
+    }
+  },
+
+  // Stop running model
+  stopModel: async (name: string) => {
+    try {
+      await invoke('stop_model', { name })
+      // Refresh list
+      await get().getRunningModels()
+      return true
+    } catch (error) {
+      console.error('Failed to stop model:', error)
+      return false
+    }
+  },
+
+
 }), {
   name: 'monitoring-storage',
   partialize: (state) => ({

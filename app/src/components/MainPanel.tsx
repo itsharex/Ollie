@@ -240,8 +240,8 @@ export default function MainPanel() {
           </div>
         ) : (
           /* Chat Messages */
-          <div className="w-full px-6 sm:px-8 lg:px-12 py-6">
-            <div className=" max-w-4xl mx-auto">
+          <div className="w-full px-6 sm:px-8 lg:px-12 py-6 overflow-x-hidden">
+            <div className="max-w-4xl mx-auto">
               {messages.map((msg) => (
                 <Message key={msg.id} message={msg} />
               ))}
@@ -262,8 +262,8 @@ export default function MainPanel() {
         </button>
       )}
 
-      {/* Input Area */}
-      <div className="border-t border-gray-100 bg-gray-50/50 backdrop-blur-sm">
+      {/* Input Area - constrained to max 40% of height */}
+      <div className="border-t border-gray-100 bg-gray-50/50 backdrop-blur-sm flex-shrink-0 max-h-[40vh] overflow-y-auto">
         <div className="w-full max-w-4xl mx-auto p-6 sm:p-8">
           <div className="relative">
             {/* Attachment Preview Area */}

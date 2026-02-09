@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use crate::commands::settings::get_ollama_url;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HealthStatus {
@@ -28,7 +29,7 @@ pub struct ServiceActionResult {
 
 #[tauri::command]
 pub async fn server_health(url: Option<String>) -> Result<HealthStatus, String> {
-    let server_url = url.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let server_url = url.unwrap_or_else(get_ollama_url);
     let health_url = format!("{}/api/tags", server_url);
     
     let client = reqwest::Client::builder()
@@ -224,13 +225,14 @@ pub async fn stop_ollama_service() -> Result<ServiceActionResult, String> {
 
 // Helper functions
 async fn is_ollama_service_running() -> bool {
-    // Check if we can connect to Ollama API
+    // Check if we can connect to Ollama API (use configured URL)
+    let base_url = get_ollama_url();
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3))
         .build();
         
     if let Ok(client) = client {
-        if let Ok(response) = client.get("http://localhost:11434/api/tags").send().await {
+        if let Ok(response) = client.get(format!("{}/api/tags", base_url)).send().await {
             return response.status().is_success();
         }
     }

@@ -97,6 +97,13 @@ export const useModelsStore = create<ModelsState>((set) => ({
         unlistenProgress()
         unlistenError()
         unlistenComplete()
+        // Remove from pulls after 2 seconds so user sees "complete" status briefly
+        setTimeout(() => {
+          set((s) => {
+            const { [pull_id]: _, ...rest } = s.pulls
+            return { pulls: rest }
+          })
+        }, 2000)
       })
 
       const res = await invoke('model_pull', { name }) as { success: boolean, error?: string }

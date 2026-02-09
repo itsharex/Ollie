@@ -45,6 +45,34 @@ fn config_dir() -> Result<PathBuf, String> {
 
 fn settings_path() -> Result<PathBuf, String> { Ok(config_dir()?.join("settings.json")) }
 
+/// Get the configured Ollama server URL (for use by other modules)
+pub fn get_ollama_url() -> String {
+    let path = match settings_path() {
+        Ok(p) => p,
+        Err(_) => return "http://localhost:11434".to_string(),
+    };
+    
+    if !path.exists() {
+        return "http://localhost:11434".to_string();
+    }
+    
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return "http://localhost:11434".to_string(),
+    };
+    
+    let settings: Settings = match serde_json::from_str(&content) {
+        Ok(s) => s,
+        Err(_) => return "http://localhost:11434".to_string(),
+    };
+    
+    if settings.server_url.is_empty() {
+        "http://localhost:11434".to_string()
+    } else {
+        settings.server_url
+    }
+}
+
 fn default_providers() -> Vec<ProviderConfig> {
     vec![ProviderConfig::ollama_default()]
 }

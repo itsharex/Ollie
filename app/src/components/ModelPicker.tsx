@@ -56,9 +56,61 @@ export default function ModelPicker() {
 					onClick={() => import('@tauri-apps/plugin-shell').then(({ open }) => open('https://ollama.com/library'))}
 					className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
 				>
-					Browse available models on Ollama Library <span className="text-lg">↗</span>
+					Browse available models on Ollama Library
 				</button>
 			</div>
+
+			{/* Active pulls moved to top for visibility */}
+			{Object.entries(pulls).length > 0 && (
+				<div className="space-y-3 mb-6">
+					<h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+						<Download size={16} className="text-gray-900" />
+						Active Downloads
+					</h3>
+					{Object.entries(pulls).map(([id, p]: any) => (
+						<div key={id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm border-l-4 border-l-gray-900">
+							<div className="flex items-center justify-between mb-3">
+								<div className="text-md font-medium text-gray-900">{p.name}</div>
+								<div className="flex items-center gap-2">
+									<div className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded">
+										{p.status}
+									</div>
+								</div>
+							</div>
+							{p.progress && (
+								<div className="space-y-2">
+									{(() => {
+										const prog = p.progress || {}
+										const completed = Number(prog.completed ?? prog.downloaded ?? 0)
+										const total = Number(prog.total ?? prog.size ?? 0)
+										const percent = total > 0 ? Math.floor((completed / total) * 100) : 0
+										return <ProgressBar value={percent} />
+									})()}
+									<div className="flex justify-between text-xs text-gray-500 font-mono">
+										<span>
+											{(() => {
+												const prog = p.progress || {}
+												const completed = Number(prog.completed ?? prog.downloaded ?? 0)
+												const total = Number(prog.total ?? prog.size ?? 0)
+												return total > 0 ? `${(completed / 1e6).toFixed(1)}MB / ${(total / 1e6).toFixed(1)}MB` : p.status
+											})()}
+										</span>
+										<span>
+											{(() => {
+												const prog = p.progress || {}
+												const completed = Number(prog.completed ?? prog.downloaded ?? 0)
+												const total = Number(prog.total ?? prog.size ?? 0)
+												return total > 0 ? `${Math.floor((completed / total) * 100)}%` : ''
+											})()}
+										</span>
+									</div>
+								</div>
+							)}
+						</div>
+					))}
+				</div>
+			)}
+
 
 			{/* Recommended Models */}
 			<div className="space-y-3">
@@ -184,51 +236,7 @@ export default function ModelPicker() {
 				))}
 			</div>
 
-			{/* Active pulls */}
-			{Object.entries(pulls).length > 0 && (
-				<div className="space-y-3">
-					<h3 className="text-sm font-semibold text-gray-900 mb-3">Active Downloads</h3>
-					{Object.entries(pulls).map(([id, p]: any) => (
-						<div key={id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-							<div className="flex items-center justify-between mb-3">
-								<div className="text-sm font-medium text-gray-900">{p.name}</div>
-								<div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-									{p.status}
-								</div>
-							</div>
-							{p.progress && (
-								<div className="space-y-2">
-									{(() => {
-										const prog = p.progress || {}
-										const completed = Number(prog.completed ?? prog.downloaded ?? 0)
-										const total = Number(prog.total ?? prog.size ?? 0)
-										const percent = total > 0 ? Math.floor((completed / total) * 100) : 0
-										return <ProgressBar value={percent} />
-									})()}
-									<div className="flex justify-between text-xs text-gray-500">
-										<span>
-											{(() => {
-												const prog = p.progress || {}
-												const completed = Number(prog.completed ?? prog.downloaded ?? 0)
-												const total = Number(prog.total ?? prog.size ?? 0)
-												return total > 0 ? `${(completed / 1e6).toFixed(1)}MB / ${(total / 1e6).toFixed(1)}MB` : p.status
-											})()}
-										</span>
-										<span>
-											{(() => {
-												const prog = p.progress || {}
-												const completed = Number(prog.completed ?? prog.downloaded ?? 0)
-												const total = Number(prog.total ?? prog.size ?? 0)
-												return total > 0 ? `${Math.floor((completed / total) * 100)}%` : ''
-											})()}
-										</span>
-									</div>
-								</div>
-							)}
-						</div>
-					))}
-				</div>
-			)}
+
 
 			{selectedModelInfo && (
 				<ModelInfoModal

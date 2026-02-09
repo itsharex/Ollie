@@ -314,6 +314,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Throttled chunk batching to prevent UI lag with fast streams
     let chunkBuffer = ''
     let flushScheduled = false
+    let isFirstChunk = true
     let flushTimeoutId: NodeJS.Timeout | null = null
     const FLUSH_INTERVAL_MS = 50 // Flush every 50ms max
 
@@ -321,8 +322,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!chunkBuffer) return
 
       const currentState = get()
+      // Use efficient partial updates if possible, but here we rebuild message
+      // Note: We could optimize this further by just sending the delta to the component
+      // but Zustand updates are usually fast enough if not too frequent.
       const currentMessage = currentState.messages.find(m => m.id === assistantMessageId)
       if (currentMessage) {
+        // Append buffer to current content
         const newContent = (currentMessage.content || '') + chunkBuffer
         currentState.updateStreamingMessage(assistantMessageId, newContent)
       }
@@ -331,6 +336,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const scheduleFlush = () => {
+      // Always flush the very first chunk immediately for instant feedback
+      if (isFirstChunk) {
+        flushChunkBuffer()
+        isFirstChunk = false
+        return
+      }
+
       if (flushScheduled) return
       flushScheduled = true
       flushTimeoutId = setTimeout(() => {
@@ -628,8 +640,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // 3. Trigger Generation (Re-use logic from sendMessage mostly)
 
-    // Add assistant message placeholder
-    const assistantMessageId = state.addMessage({
+    // Add assistant message placeholder - use get() for fresh state!
+    const freshStateForAdd = get()
+    const assistantMessageId = freshStateForAdd.addMessage({
       role: 'assistant',
       content: '',
       isStreaming: true,
@@ -794,7 +807,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Intelligent Provider Selection
       // 1. If the model is in our known local Ollama models list, force Ollama provider
-      const isLocalModel = models.some(m => m.name === state.currentModel)
+      const currentModel = get().currentModel
+      const isLocalModel = models.some(m => m.name === currentModel)
       const ollamaProvider = providers.find(p => p.provider_type === 'ollama')
 
       if (isLocalModel && ollamaProvider) {
@@ -807,7 +821,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       await invoke('chat_stream', {
         request: {
-          model: state.currentModel,
+          model: currentModel,
           messages: apiMessages,
           stream: true,
           options: undefined // Use defaults for edit regenerate for now

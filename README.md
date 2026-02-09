@@ -26,14 +26,14 @@ If you want a personal, single-user assistant that feels premium, fast, and alwa
 No configuration needed. Just download and run.
 
 ```bash
-# Download the AppImage (v0.2.1)
-wget https://github.com/MedGm/OllamaGUI/releases/download/v0.2.1/Ollie_0.2.1_amd64.AppImage
+# Download the AppImage (v0.2.2)
+wget https://github.com/MedGm/OllamaGUI/releases/download/v0.2.2/Ollie_0.2.2_amd64.AppImage
 
 # Make it executable
-chmod +x Ollie_0.2.1_amd64.AppImage
+chmod +x Ollie_0.2.2_amd64.AppImage
 
 # Run it
-./Ollie_0.2.1_amd64.AppImage
+./Ollie_0.2.2_amd64.AppImage
 ```
 
 *Requirements: [Ollama](https://ollama.com) installed and running.*
@@ -53,7 +53,7 @@ Pull, delete, and manage your Ollama models directly from the app. No need to dr
 Drag and drop images to analyze them with vision models like LLaVA. Upload PDFs and text files to chat with your documents instantly.
 
 **Monitoring Dashboard**
-Real-time tracking of your system resources (CPU, Memory) and model performance while generating responses.
+Real-time tracking of system resources (CPU, Memory), running models with VRAM usage, and the ability to stop/unload models directly from the dashboard.
 
 ## Gallery
 
@@ -80,13 +80,17 @@ Real-time tracking of your system resources (CPU, Memory) and model performance 
 
 ### ✅ Recently Completed
 
+- **Monitoring Dashboard Enhancements**: View running models, VRAM usage, and stop/unload models directly from the Monitoring tab.
+- **Model Download Progress**: Visual progress bars for model downloads with size/percentage display.
+- **Fullscreen Code Preview**: Expand HTML/SVG previews to fullscreen modal for better viewing.
+- **Streaming Performance**: Optimized first-token latency for faster response appearance.
 - **Message Editing**: Edit sent messages and regenerate responses from any point.
 - **Real-time HTML Preview**: Instant rendering of HTML/SVG artifacts directly in chat.
 - **Think Mode**: Toggle visibility for reasoning models' thought processes.
 - **Ollama Library Browser**: Browse available models directly from [ollama.com/library](https://ollama.com/library) in the pull dialog.
 - **MCP Support**: Full Model Context Protocol integration for extensible tool access (filesystem, web, code execution, etc.).
 - **Cloud API Support**: Unified provider system supporting OpenAI, Anthropic, Google Gemini, and GroqCloud alongside local Ollama models.
-- **Startup Wizard**: Premium onboarding experience for choosing between Local and Cloud modes.
+- **Startup Wizard**: Choosing between Local and Cloud modes.
 - **Smart Streaming**: Throttled chunk batching for smooth UI even with ultra-fast cloud providers.
 - **Graceful Error Handling**: Auto-fallback for models without tool support, truncation for large tool outputs.
 
