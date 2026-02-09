@@ -25,7 +25,7 @@ export default function MainPanel() {
   } = useChatStore()
 
   // Add debugging for re-renders
-  console.log('🎨 MainPanel render - message count:', messages.length, 'updateCounter:', updateCounter, 'lastUpdate:', lastUpdate)
+  console.log(' MainPanel render - message count:', messages.length, 'updateCounter:', updateCounter, 'lastUpdate:', lastUpdate)
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior })
@@ -137,6 +137,7 @@ export default function MainPanel() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
+      if (isStreaming) return
       handleSendMessage()
     }
   }

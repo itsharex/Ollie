@@ -1,4 +1,4 @@
-import { User, Copy, Check, Pencil } from 'lucide-react'
+import { User, Copy, Check, Pencil, Wrench, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { useChatStore, type ChatMessage } from '../store/chatStore'
 import Markdown from '../lib/markdown'
@@ -105,6 +105,25 @@ export default function Message({ message }: MessageProps) {
               </div>
             ) : (
               <>
+                {/* Tool Calls */}
+                {message.toolCalls && message.toolCalls.length > 0 && (
+                  <div className="flex flex-col gap-2 mb-4">
+                    {message.toolCalls.map((tool) => (
+                      <div key={tool.id} className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 w-fit max-w-full">
+                        {tool.status === 'calling' ? (
+                          <Loader2 size={14} className="animate-spin text-blue-500 flex-shrink-0" />
+                        ) : (
+                          <Wrench size={14} className="text-gray-400 flex-shrink-0" />
+                        )}
+                        <span className="font-medium text-gray-700 flex-shrink-0">{tool.name}</span>
+                        <span className="text-xs text-gray-400 font-mono truncate hidden sm:inline-block opacity-70">
+                          {JSON.stringify(tool.args)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Attached Images */}
                 {message.images && message.images.length > 0 && (
                   <div className="flex flex-wrap gap-3 mb-4">

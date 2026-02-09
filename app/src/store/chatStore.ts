@@ -4,11 +4,19 @@ import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from './settingsStore'
 import { useModelsStore } from './modelsStore'
 
+export interface ToolCallState {
+  id: string
+  name: string
+  args: any
+  status: 'calling' | 'done'
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   images?: string[]
+  toolCalls?: ToolCallState[]
   timestamp: number
   isStreaming?: boolean
 }
@@ -39,6 +47,8 @@ interface ChatState {
   addMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => string
   updateMessage: (id: string, content: string) => void
   updateStreamingMessage: (id: string, content: string) => void
+  updateMessageToolCalls: (id: string, toolCall: ToolCallState) => void
+  markToolCallsDone: (id: string) => void
   setStreaming: (isStreaming: boolean, messageId?: string, streamId?: string) => void
   sendMessage: (content: string, options?: ChatOptions, images?: string[]) => Promise<void>
   editUserMessage: (messageId: string, newContent: string) => Promise<void>
@@ -140,7 +150,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             role: msg.role,
             content: content,
             timestamp: msg.timestamp,
-            isStreaming: false
+            isStreaming: false,
+            toolCalls: msg.toolCalls
           }
         }
         return { ...msg } // Also clone other messages to be safe
@@ -172,7 +183,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             role: msg.role,
             content: content,
             timestamp: msg.timestamp,
-            isStreaming: true
+            isStreaming: true,
+            toolCalls: msg.toolCalls
           }
         }
         return { ...msg } // Also clone other messages to be safe
@@ -188,6 +200,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
   },
 
+  updateMessageToolCalls: (id, toolCall) => {
+    set((state) => {
+      const messageIndex = state.messages.findIndex(msg => msg.id === id)
+      if (messageIndex === -1) return state
+
+      const newMessages = [...state.messages]
+      const msg = newMessages[messageIndex]
+      const currentTools = msg.toolCalls || []
+
+      // Check if already exists (deduplication)
+      if (!currentTools.some(t => t.id === toolCall.id)) {
+        newMessages[messageIndex] = {
+          ...msg,
+          toolCalls: [...currentTools, toolCall]
+        }
+        return { messages: newMessages, updateCounter: state.updateCounter + 1, lastUpdate: Date.now() }
+      }
+      return state
+    })
+  },
+
+  markToolCallsDone: (id) => {
+    set((state) => {
+      const messageIndex = state.messages.findIndex(msg => msg.id === id)
+      if (messageIndex === -1) return state
+
+      const newMessages = [...state.messages]
+      const msg = newMessages[messageIndex]
+
+      if (msg.toolCalls) {
+        newMessages[messageIndex] = {
+          ...msg,
+          toolCalls: msg.toolCalls.map(t => ({ ...t, status: 'done' as const }))
+        }
+        return { messages: newMessages, updateCounter: state.updateCounter + 1, lastUpdate: Date.now() }
+      }
+      return state
+    })
+  },
+
   setStreaming: (isStreaming, messageId, streamId) => {
     set({
       isStreaming,
@@ -200,11 +252,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const state = get()
 
     if (state.isStreaming) {
-      console.warn('Already streaming, stopping current stream first')
-      await state.stopStreaming()
-      // Wait a bit for cleanup
-      await new Promise(resolve => setTimeout(resolve, 100))
+      console.warn('Already streaming, ignoring new message request')
+      return
     }
+
+    // prevent race conditions by setting streaming immediately
+    set({ isStreaming: true })
+    const cleanupOnError = () => set({ isStreaming: false })
 
     if (!state.currentModel) {
       console.error('No model selected')
@@ -255,14 +309,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let unlistenComplete: (() => void) | null = null
     let unlistenStreamStart: (() => void) | null = null
     let unlistenCancelled: (() => void) | null = null
+    let unlistenToolStart: (() => void) | null = null
+
+    // Throttled chunk batching to prevent UI lag with fast streams
+    let chunkBuffer = ''
+    let flushScheduled = false
+    let flushTimeoutId: NodeJS.Timeout | null = null
+    const FLUSH_INTERVAL_MS = 50 // Flush every 50ms max
+
+    const flushChunkBuffer = () => {
+      if (!chunkBuffer) return
+
+      const currentState = get()
+      const currentMessage = currentState.messages.find(m => m.id === assistantMessageId)
+      if (currentMessage) {
+        const newContent = (currentMessage.content || '') + chunkBuffer
+        currentState.updateStreamingMessage(assistantMessageId, newContent)
+      }
+      chunkBuffer = ''
+      flushScheduled = false
+    }
+
+    const scheduleFlush = () => {
+      if (flushScheduled) return
+      flushScheduled = true
+      flushTimeoutId = setTimeout(() => {
+        flushChunkBuffer()
+      }, FLUSH_INTERVAL_MS)
+    }
 
     const cleanup = () => {
       console.log('Cleaning up event listeners for message:', assistantMessageId)
+      // Flush any remaining content
+      if (flushTimeoutId) clearTimeout(flushTimeoutId)
+      flushChunkBuffer()
+
       if (unlistenChunk) unlistenChunk()
       if (unlistenError) unlistenError()
       if (unlistenComplete) unlistenComplete()
       if (unlistenStreamStart) unlistenStreamStart()
       if (unlistenCancelled) unlistenCancelled()
+      if (unlistenToolStart) unlistenToolStart()
     }
 
     try {
@@ -275,6 +362,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentStreamId = stream_id
         const currentState = get()
         currentState.setStreaming(true, assistantMessageId, stream_id)
+      })
+
+      // Listen for tool start
+      unlistenToolStart = await listen('chat:tool-start', (event: any) => {
+        const payload = event.payload as { stream_id: string, tool: string, args: any }
+        console.log('🛠️ Tool Start:', payload)
+        if (payload.stream_id === currentStreamId) {
+          get().updateMessageToolCalls(assistantMessageId, {
+            id: `tool_${Date.now()}_${Math.random()}`,
+            name: payload.tool,
+            args: payload.args,
+            status: 'calling'
+          })
+        }
       })
 
       // Listen for cancellation
@@ -290,32 +391,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Set up event listeners for streaming
       unlistenChunk = await listen('chat:chunk', (event: any) => {
         const chunk = event.payload as { message?: { role?: string; content?: string }; done?: boolean }
-        console.log('🟢 CHUNK RECEIVED for message:', assistantMessageId, 'chunk:', chunk)
 
         // Only process chunks for the currently streaming assistant message
         const currentState = get()
         if (currentState.streamingMessageId !== assistantMessageId) {
-          console.warn('⚠️ Ignoring chunk from different message stream')
           return
         }
 
+        // If we receive content, mark any previous tool calls as done and buffer it
         const part = chunk?.message?.content ?? ''
         if (part.length > 0) {
-          const currentMessage = currentState.messages.find(m => m.id === assistantMessageId)
-          if (currentMessage) {
-            const newContent = (currentMessage.content || '') + part
-            console.log('📝 Updating message content, total length:', newContent.length)
-            currentState.updateStreamingMessage(assistantMessageId, newContent)
-          } else {
-            console.error('❌ Could not find message with ID:', assistantMessageId)
+          const currentMsg = currentState.messages.find(m => m.id === assistantMessageId)
+          if (currentMsg && currentMsg.toolCalls && currentMsg.toolCalls.some(t => t.status === 'calling')) {
+            currentState.markToolCallsDone(assistantMessageId)
           }
+
+          // Buffer the chunk instead of updating immediately
+          chunkBuffer += part
+          scheduleFlush()
         }
 
-        // If the provider sends a done=true with no content, we must still finalize
+        // If the provider sends done=true, flush immediately and finalize
         if (chunk?.done) {
-          console.log('✅ Chunk marked as done, stopping stream (finalize message)')
+          // Clear pending flush and flush immediately
+          if (flushTimeoutId) clearTimeout(flushTimeoutId)
+          flushChunkBuffer()
+
           const finalState = get()
           finalState.setStreaming(false)
+          // Also mark tools done if any
+          finalState.markToolCallsDone(assistantMessageId)
+
           const currentMessage = finalState.messages.find(m => m.id === assistantMessageId)
           if (currentMessage) {
             finalState.updateMessage(assistantMessageId, currentMessage.content || '')
@@ -381,6 +487,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (currentState.isStreaming && currentState.streamingMessageId === assistantMessageId) {
           console.log('Stopping stream due to completion event')
           currentState.setStreaming(false)
+          currentState.markToolCallsDone(assistantMessageId)
 
           // Remove isStreaming flag from the message using updateMessage
           const currentMessage = currentState.messages.find(m => m.id === assistantMessageId)
@@ -427,6 +534,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
         apiMessages.unshift({ role: 'system', content: freshState.currentSystemPrompt, images: undefined })
       }
 
+      // Get active provider ID from settings
+      const { activeProviderId, providers } = useSettingsStore.getState()
+
+      const { appMode } = useSettingsStore.getState()
+      const { models } = useModelsStore.getState()
+      let providerId = activeProviderId
+
+      // Intelligent Provider Selection
+      // 1. If the model is in our known local Ollama models list, force Ollama provider
+      const isLocalModel = models.some(m => m.name === state.currentModel)
+      const ollamaProvider = providers.find(p => p.provider_type === 'ollama')
+
+      if (isLocalModel && ollamaProvider) {
+        providerId = ollamaProvider.id
+      } else if (appMode === 'local' && ollamaProvider) {
+        // Fallback: If we are strictly in local mode, default to Ollama
+        providerId = ollamaProvider.id
+      }
+      // Otherwise use the active (Cloud) provider
+
       // Send the chat request
       await invoke('chat_stream', {
         request: {
@@ -440,6 +567,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             max_tokens: options.maxTokens,
           } : undefined,
         },
+        providerId: providerId
       })
 
       // Add a timeout safety net
@@ -453,7 +581,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     } catch (error) {
       console.error('Failed to send message:', error)
-      state.setStreaming(false)
+      cleanupOnError()
       state.updateMessage(assistantMessageId, `Error: ${error}`)
       cleanup()
     }
@@ -517,6 +645,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     let unlistenComplete: (() => void) | null = null
     let unlistenStreamStart: (() => void) | null = null
     let unlistenCancelled: (() => void) | null = null
+    let unlistenToolStart: (() => void) | null = null
 
     const cleanup = () => {
       console.log('Cleaning up event listeners for message:', assistantMessageId)
@@ -525,6 +654,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (unlistenComplete) unlistenComplete()
       if (unlistenStreamStart) unlistenStreamStart()
       if (unlistenCancelled) unlistenCancelled()
+      if (unlistenToolStart) unlistenToolStart()
     }
 
     try {
@@ -534,6 +664,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const { stream_id } = event.payload as { stream_id: string }
         currentStreamId = stream_id
         get().setStreaming(true, assistantMessageId, stream_id)
+      })
+
+      unlistenToolStart = await listen('chat:tool-start', (event: any) => {
+        const payload = event.payload as { stream_id: string, tool: string, args: any }
+        console.log('🛠️ Tool Start:', payload)
+        if (payload.stream_id === currentStreamId) {
+          get().updateMessageToolCalls(assistantMessageId, {
+            id: `tool_${Date.now()}_${Math.random()}`,
+            name: payload.tool,
+            args: payload.args,
+            status: 'calling'
+          })
+        }
       })
 
       unlistenCancelled = await listen('chat:cancelled', (event: any) => {
@@ -551,6 +694,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         const part = chunk?.message?.content ?? ''
         if (part.length > 0) {
+          const currentMsg = currentState.messages.find(m => m.id === assistantMessageId)
+          if (currentMsg && currentMsg.toolCalls && currentMsg.toolCalls.some(t => t.status === 'calling')) {
+            currentState.markToolCallsDone(assistantMessageId)
+          }
+
           const currentMessage = currentState.messages.find(m => m.id === assistantMessageId)
           if (currentMessage) {
             currentState.updateStreamingMessage(assistantMessageId, (currentMessage.content || '') + part)
@@ -560,6 +708,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (chunk?.done) {
           const finalState = get()
           finalState.setStreaming(false)
+          finalState.markToolCallsDone(assistantMessageId)
           const currentMessage = finalState.messages.find(m => m.id === assistantMessageId)
           if (currentMessage) {
             finalState.updateMessage(assistantMessageId, currentMessage.content || '')
@@ -594,6 +743,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const st = get()
         if (st.isStreaming && st.streamingMessageId === assistantMessageId) {
           st.setStreaming(false)
+          st.markToolCallsDone(assistantMessageId)
           const currentMessage = st.messages.find(m => m.id === assistantMessageId)
           if (currentMessage) {
             st.updateMessage(assistantMessageId, currentMessage.content)
@@ -625,6 +775,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
         apiMessages.unshift({ role: 'system', content: freshState.currentSystemPrompt, images: undefined })
       }
 
+      // Get active provider ID from settings
+      const { activeProviderId, providers } = useSettingsStore.getState()
+
+      // If the current model is an Ollama model, we should prefer the Ollama provider
+      // But if the user explicitly selected a Cloud provider, we might have a conflict if they try to pick a local model?
+      // For now, let's trust the activeProviderId, BUT if the mode is 'local', we should force Ollama-default?
+      // Actually, let's keep it simple: pass the activeProviderId.
+      // However, the issue described by user ("Using provider: GroqCloud (Other)") when they want local implies
+      // activeProviderId might be set to Groq. 
+      // We should probably check if the model exists in the active provider? 
+      // Or relies on the UI to switch providers when switching models?
+      // Current UI has a "Mode" switch (Local/Cloud).
+
+      const { appMode } = useSettingsStore.getState()
+      const { models } = useModelsStore.getState()
+      let providerId = activeProviderId
+
+      // Intelligent Provider Selection
+      // 1. If the model is in our known local Ollama models list, force Ollama provider
+      const isLocalModel = models.some(m => m.name === state.currentModel)
+      const ollamaProvider = providers.find(p => p.provider_type === 'ollama')
+
+      if (isLocalModel && ollamaProvider) {
+        providerId = ollamaProvider.id
+      } else if (appMode === 'local' && ollamaProvider) {
+        // Fallback: If we are strictly in local mode, default to Ollama
+        providerId = ollamaProvider.id
+      }
+      // Otherwise use the active (Cloud) provider
+
       await invoke('chat_stream', {
         request: {
           model: state.currentModel,
@@ -632,6 +812,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           stream: true,
           options: undefined // Use defaults for edit regenerate for now
         },
+        providerId: providerId
       })
 
     } catch (error) {
@@ -646,7 +827,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const state = get()
     if (state.isStreaming) {
       try {
-        await invoke('abort_chat')
+        await invoke('chat_cancel')
         state.setStreaming(false)
       } catch (error) {
         console.error('Failed to stop streaming:', error)

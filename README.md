@@ -83,17 +83,22 @@ Real-time tracking of your system resources (CPU, Memory) and model performance 
 - **Message Editing**: Edit sent messages and regenerate responses from any point.
 - **Real-time HTML Preview**: Instant rendering of HTML/SVG artifacts directly in chat.
 - **Think Mode**: Toggle visibility for reasoning models' thought processes.
+- **Ollama Library Browser**: Browse available models directly from [ollama.com/library](https://ollama.com/library) in the pull dialog.
+- **MCP Support**: Full Model Context Protocol integration for extensible tool access (filesystem, web, code execution, etc.).
+- **Cloud API Support**: Unified provider system supporting OpenAI, Anthropic, Google Gemini, and GroqCloud alongside local Ollama models.
+- **Startup Wizard**: Premium onboarding experience for choosing between Local and Cloud modes.
+- **Smart Streaming**: Throttled chunk batching for smooth UI even with ultra-fast cloud providers.
+- **Graceful Error Handling**: Auto-fallback for models without tool support, truncation for large tool outputs.
 
 ### 🚀 Upcoming Features
 
 **Quick Wins**
-- **Ollama Library Browser**: Browse available models directly from [ollama.com/library](https://ollama.com/library) in the pull dialog.
 - **Export/Import Conversations**: Export chats as Markdown, JSON, or PDF. Import from ChatGPT/Claude formats.
 - **Keyboard Shortcuts**: `Ctrl+N` new chat, `Ctrl+K` model switch, `Ctrl+/` focus input, and customizable keybindings.
 - **Image/SVG Export**: Download HTML preview artifacts as PNG or SVG files.
 
 **Core & Chat**
-- **Structured Outputs**: Support for JSON schemas and tool calling.
+- **Structured Outputs**: Support for JSON schemas and advanced tool calling patterns.
 - **Conversation Branching**: Fork conversations from any point.
 - **Multi-Model Comparison**: Send same prompt to multiple models, compare responses side-by-side.
 - **Prompt Templates Library**: Pre-built and user-created templates with variables.
@@ -109,11 +114,10 @@ Real-time tracking of your system resources (CPU, Memory) and model performance 
 - **Custom Agents**: Configure specific system prompts and behaviors per chat.
 
 **Platform & Integration**
-- **MCP Support**: Connect to external tools via Model Context Protocol servers.
 - **Ollama Server Discovery**: Auto-detect and connect to Ollama instances on local network.
-- **Cloud API Support**: Integrate Anthropic/OpenAI alongside local models.
 - **Voice Mode**: Hands-free voice interaction.
 - **Mobile Companion App**: iOS/Android versions.
+- **Windows & MacOS Support**: Windows & MacOS versions.
 - **Plugin System**: Extend functionality with community plugins.
 - **Internationalization**: Multi-language UI support.
 

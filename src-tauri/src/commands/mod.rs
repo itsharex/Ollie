@@ -4,3 +4,4 @@ pub mod db;
 pub mod sys;
 pub mod settings;
 pub mod monitoring;
+pub mod mcp;

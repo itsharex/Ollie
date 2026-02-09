@@ -51,6 +51,15 @@ export default function ModelPicker() {
 				</button>
 			</div>
 
+			<div className="flex justify-end -mt-3 mb-2">
+				<button
+					onClick={() => import('@tauri-apps/plugin-shell').then(({ open }) => open('https://ollama.com/library'))}
+					className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
+				>
+					Browse available models on Ollama Library <span className="text-lg">↗</span>
+				</button>
+			</div>
+
 			{/* Recommended Models */}
 			<div className="space-y-3">
 				<h3 className="text-sm font-semibold text-gray-900">Recommended Models</h3>

@@ -1,5 +1,7 @@
 mod commands;
 mod db;
+mod mcp;
+mod providers;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -11,7 +13,7 @@ pub fn run() {
       commands::sys::start_ollama_service,
       commands::sys::stop_ollama_service,
       commands::chat::chat_stream,
-      commands::chat::abort_chat,
+      commands::chat::chat_cancel,
       commands::models::models_list,
       commands::models::model_pull,
       commands::models::model_delete,
@@ -32,7 +34,17 @@ pub fn run() {
       commands::monitoring::stop_system_monitoring,
       commands::monitoring::get_system_metrics,
       commands::monitoring::get_model_metrics,
-      commands::monitoring::get_ollama_status
+      commands::monitoring::get_ollama_status,
+      commands::mcp::connect_mcp_server,
+      commands::mcp::connect_mcp_http,
+      commands::mcp::list_mcp_servers,
+      commands::mcp::list_tools,
+      commands::settings::provider_add,
+      commands::settings::provider_update,
+      commands::settings::provider_delete,
+      commands::settings::provider_set_active,
+      commands::settings::provider_list,
+      commands::settings::provider_get_active
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {

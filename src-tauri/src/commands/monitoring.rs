@@ -118,7 +118,7 @@ pub async fn get_model_metrics(model_name: Option<String>) -> Result<Vec<ModelMe
     // For now, return mock data for demonstration
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     
     let models = if let Some(name) = model_name {
@@ -154,7 +154,7 @@ pub async fn get_ollama_status() -> Result<OllamaStatus, String> {
 fn collect_system_metrics(system: &System) -> SystemMetrics {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     
     // CPU usage (average across all cores)
@@ -188,7 +188,7 @@ fn collect_system_metrics(system: &System) -> SystemMetrics {
 async fn collect_ollama_status() -> Result<OllamaStatus, String> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     
     // Try to connect to Ollama API
@@ -238,6 +238,7 @@ async fn collect_ollama_status() -> Result<OllamaStatus, String> {
 }
 
 // Helper function to track model performance during chat operations
+#[allow(dead_code)]
 pub fn track_model_performance(
     app: &AppHandle,
     model_name: &str,
@@ -247,7 +248,7 @@ pub fn track_model_performance(
 ) {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     
     let metrics = ModelMetrics {
