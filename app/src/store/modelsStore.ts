@@ -79,7 +79,7 @@ export const useModelsStore = create<ModelsState>((set) => ({
 
       // Attach listeners lazily per pull
       const unlistenStart = await listen('models:pull-start', (e: any) => {
-        const { pull_id, name: n } = e.payload
+        const { pull_id } = e.payload
         if (pull_id !== pullId) return
         set((s) => ({ pulls: { ...s.pulls, [pull_id]: { ...s.pulls[pull_id], status: 'starting' } } }))
       })
